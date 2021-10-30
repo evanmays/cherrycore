@@ -32,7 +32,8 @@ module dcache_mem_high_priority #(parameter SZ=4, LOGCNT=5, BITS=18) (
   input [10+LOGCNT-2:0] stride_y,
   input [BITS*SZ*SZ-1:0] dat_w,
   input we,
-  output reg [BITS*SZ*SZ-1:0] dat_r
+  output reg [BITS*SZ*SZ-1:0] dat_r,
+  output wire stall
 );
   parameter CNT=(1<<LOGCNT);
 
@@ -46,19 +47,23 @@ module dcache_mem_high_priority #(parameter SZ=4, LOGCNT=5, BITS=18) (
 
   // 1 cycle to get all the addresses
   reg [(10+LOGCNT)*SZ*SZ_X-1:0] addrs;
+  reg [SZ*SZ_X-1:0] complete_flags; // set to 0 when we have completed the memory request for the address. May be delayed due to bank conflicts
+  assign stall = !(&complete_flags);
 
   generate
     genvar x,y;
     for (y=0; y<SZ; y=y+1) begin
       for (x=0; x<SZ_X; x=x+1) begin
         always @(posedge clk) begin
-          addrs[(y*SZ_X+x)*(10+LOGCNT) +: (10+LOGCNT)] <= addr + stride_x*x + stride_y*y;
+          if (!stall) begin
+            addrs[(y*SZ_X+x)*(10+LOGCNT) +: (10+LOGCNT)] <= addr + stride_x*x + stride_y*y;  
+          end
         end
       end
     end
   endgenerate
   
-  reg [CNT*SZ_X*SZ-1:0] mask;
+  reg [CNT*SZ_X*SZ-1:0] mask, mask_intermediary;
   wire [LINE*CNT-1:0] outs;
 
   generate
@@ -82,14 +87,25 @@ module dcache_mem_high_priority #(parameter SZ=4, LOGCNT=5, BITS=18) (
         //ens[i] <= 'b0;
         mask[i*SZ_X*SZ +: SZ_X*SZ] <= 'b0;
         for (l=SZ_X*SZ-1; l>=0; l=l-1) begin
-          if (addrs[(10+LOGCNT)*l +: LOGCNT] == i) begin
-            mask[i*SZ_X*SZ +: SZ_X*SZ] <= (1 << l);
+          if (addrs[(10+LOGCNT)*l +: LOGCNT] == i && complete_flags[l] == 0) begin
+            mask_intermediary[i*SZ_X*SZ +: SZ_X*SZ] = (1 << l);
+            mask[i*SZ_X*SZ +: SZ_X*SZ] <= mask_intermediary[i*SZ_X*SZ +: SZ_X*SZ];
             taddr <= addrs[(10+LOGCNT)*l+LOGCNT +: 10];
             in <= dat_w[LINE*l +: LINE];
           end
         end
+        complete_flags <= stall ? (complete_flags | complete_flags_intermediary) : 0;
       end
       assign outs[i*LINE +: LINE] = out;
+    end
+
+    wire [CNT*SZ_X*SZ-1:0] rotated_mask;
+    wire [SZ*SZ_X-1:0] complete_flags_intermediary;
+    for (k=0; k<SZ_X*SZ; k=k+1) begin
+        for (i=0; i<CNT; i=i+1) begin
+          assign rotated_mask[k*CNT + i] = mask_intermediary[i*SZ_X*SZ + k];
+          assign complete_flags_intermediary[k] = |rotated_mask[CNT*k +: CNT];
+        end
     end
 
     // this is SZ*SZ number of CNT to 1 muxes. these don't have to be priority encoders, really just a big or gate
@@ -128,9 +144,9 @@ module dcache_mem_low_priority #(parameter SZ=4, LOGCNT=5, BITS=18) (
   reg [LINE-1:0] mem [0:CNT*1024-1];
   always @(posedge clk) begin
     if (we) begin
-      mem[addr] <= data_w;
+      mem[addr] <= dat_w;
     end else begin
-      data_r <= mem[addr];
+      dat_r <= mem[addr];
     end
   end
 
