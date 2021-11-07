@@ -2,14 +2,25 @@
 
 import serial
 import numpy as np
+import torch
 import time
 
 port = "/dev/cu.usbserial-210319B26E8C1"
 
-input = np.array([
-    [23123.3, -555.1],
-    [-723.9, 6.9]
-], dtype=np.float16)
+def make_input(random=True):
+    if random:
+        input = torch.zeros(10, 5, dtype=torch.float16)
+        torch.nn.init.xavier_uniform(input)
+        input = input.numpy().astype(np.float16)
+    else:
+        input = np.array([
+            [23123.3, -555.1],
+            [-723.9, 6.9]
+        ], dtype=np.float16)
+    return input
+
+input = make_input(True)
+
 print(input)
 input_bytes = input.byteswap().tobytes()
 
@@ -27,4 +38,8 @@ with serial.Serial(port, timeout=4,baudrate=4800) as ser:
     output_bytes = ser.read(len(input_bytes))
     
     # print("Sent:    ", input_bytes, "\nGot back:", output_bytes)
-    print(np.frombuffer(output_bytes, dtype='>f2').reshape(input.shape))
+    output_numpy = np.frombuffer(output_bytes, dtype='>f2').reshape(input.shape)
+    print(output_numpy)
+    expected = torch.tensor(input).double().relu().half()
+    actual = torch.tensor(output_numpy.astype('<f2'))
+    print("PASS" if torch.isclose(expected, actual).all() else "FAIL")
