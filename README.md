@@ -17,7 +17,10 @@ Superscalar notes below
 2. Small Cherry 1, does 6.4 GFLOPs with support for entire ISA in simulator and on physical a7-100t
 3. Big Cherry 1, works on physical big $7500 fpga
 
-Cherry 2 and 3 master plan https://github.com/geohot/tinygrad/tree/master/accel/cherry
+Original Cherry 2 and 3 master plan [written by geohot here](https://github.com/geohot/tinygrad/tree/master/accel/cherry). But I have some tweaks
+
+1. Cherry 2 stays the same. It's just a tapeout of the Big Cherry 1
+2. Cherry 3 is the AI Training Card for your desktop and for real production model training (no GPT-3 fine tuning sorry). It's got half a petaflop peak TF32 performance and high flop utilization. 8 cores instead of 16. 1024 GB/s VRAM instead of 512.
 
 # How to get to working Tiny Cherry 1
 
@@ -30,6 +33,15 @@ Just finish these last 4 things
 * **Make a floating point ReLU**. Probably 10 lines of verilog. We want a simple processing instruction so we can end to end test without worrying about if this is correct or not. More arithmetic will come later.
 * **Top**. Create `module top_tiny` that wires all the pieces together. Now we can test training on mnist with the relus done on cherry verilator simulator.
 
+# Cherry Inference Chip Works on a7100t
+
+This chip takes in a fp16 over uart, then applies the ReLU function, then sends the fp16 back over uart. We have this working with numpy arrays.
+
+Tested on macOS plugged in to a7100t over usb.
+
+Prerequisites aren't documented but the script that synthesizes, place-n-routes, uploads the bitstream, and runs a test python program is `./test_a7100t_relu.sh`
+
+It does something like 100 ReLUs a second. will be scaffolding for making tiny cherry 1
 
 # Getting Started
 
