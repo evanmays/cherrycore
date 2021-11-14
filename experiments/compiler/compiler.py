@@ -52,24 +52,24 @@ class Reg(Enum):
 
 # ==== Compiler state ====
 
-is_kernel_active = False
+is_jit_compiling_active = False
 loop_var_next = 0
 
 loop_ro_data = [False] * len(loop_variables) # We could actually make this larger if we want
 apu_ro_data = [False] * APU_LIMIT
 next_apu = 0
-kernel = []
+program = []
 
 # ==== Internal stuffs ====
 
 @dataclass
-class KernelGhostTensor():
+class GhostTensor():
     shape: Tuple[int]
     is_model_param: bool
     slot_if_on_chip: Optional[Slot]
     main_memory_address: Optional[int]
 
-class KernelGhostOutputTensorBuilder():
+class GhostOutputTensorBuilder():
     def __init__(self):
         self.slot_if_on_chip = None
         self.main_mem_addr = None
@@ -83,8 +83,8 @@ class KernelGhostOutputTensorBuilder():
         self.slot_if_on_chip = slot
     def set_shape(self, shape: Tuple[int]):
         self.shape = shape
-    def to_kernel_ghost_tensor(self):
-        return KernelGhostTensor(shape=self.shape, is_model_param=False, slot_if_on_chip=self.slot_if_on_chip, main_memory_address=self.main_mem_addr)
+    def to_ghost_tensor(self):
+        return GhostTensor(shape=self.shape, is_model_param=False, slot_if_on_chip=self.slot_if_on_chip, main_memory_address=self.main_mem_addr)
     def convert_to_tensor(self):
         # assert calling from this file
         # TODO: makes a new tinygrad tensor with a CherryBuffer
@@ -102,8 +102,8 @@ def _assert(target_true, error_msg):
 def assert_program_active(func):
     @functools.wraps(func)
     def f(*args, **kwargs):
-        if not is_kernel_active:
-            raise CherryError(f"Kernel active status: {is_kernel_active}. Try calling our riski_* instructions in a kernel. You can add @cherry_program to your function")
+        if not is_jit_compiling_active:
+            raise CherryError(f"JIT active status: {is_jit_compiling_active}. Try calling our cisa_* instructions in a @cherry_program function.")
         func(*args, **kwargs)
     return f
 
@@ -115,14 +115,14 @@ def cherry_program(func=None, title=None, replaces=None):
         return functools.partial(cherry_program, title=title)
     @functools.wraps(func)
     def f(*args, **kwargs):
-        global loop_ro_data, apu_ro_data, kernel, loop_var_next, next_apu, is_kernel_active
-        is_kernel_active = True
+        global loop_ro_data, apu_ro_data, program, loop_var_next, next_apu, is_jit_compiling_active
+        is_jit_compiling_active = True
 
         # reset variables
         prev_prog_high_priority_outputs = []
         loop_ro_data = [False for _ in range(len(loop_ro_data))]
         apu_ro_data = [False for _ in range(len(apu_ro_data))]
-        kernel = []
+        program = []
         loop_var_next = 0
         next_apu = 0
 
@@ -133,31 +133,31 @@ def cherry_program(func=None, title=None, replaces=None):
         assert len(cherry_program_arg_types) == len(args) + 1
         for i, tensor in enumerate(args):
             if isinstance(tensor, np.ndarray):
-                if cherry_program_arg_types[i] == KernelGhostTensor:
-                    t = KernelGhostTensor(shape=tensor.shape, is_model_param=False, slot_if_on_chip=None, main_memory_address=id(tensor)) # set is_model_param based on tiny grad tensor. Set slot_if_on_chip based on tiny grad tensor. Value in tiny grad tensor must be set from ghost builder
+                if cherry_program_arg_types[i] == GhostTensor:
+                    t = GhostTensor(shape=tensor.shape, is_model_param=False, slot_if_on_chip=None, main_memory_address=id(tensor)) # set is_model_param based on tiny grad tensor. Set slot_if_on_chip based on tiny grad tensor. Value in tiny grad tensor must be set from ghost builder
                     ghost_args.append(t)
 
         for arg_type in cherry_program_arg_types:
-            if arg_type == KernelGhostOutputTensorBuilder:
-                out = KernelGhostOutputTensorBuilder()
+            if arg_type == GhostOutputTensorBuilder:
+                out = GhostOutputTensorBuilder()
                 ghost_args.append(out)
                 ret = out
 
-        # Run kernel
+        # Run program
         func(*(tuple(ghost_args)), **kwargs)
         
-        # Assert kernel did its job
+        # Assert program did its job
         ret.assert_complete()
 
-        # Finish creating kernel
+        # Finish creating program
         header = f"""Title:          {title}
 loop_ro_data:   {loop_ro_data}
 apu_ro_data:    {apu_ro_data}
 
 body:
 """
-        print(header + "\n".join(kernel))
-        is_kernel_active = False
+        print(header + "\n".join(program))
+        is_jit_compiling_active = False
         return ret.convert_to_tensor()
     return f
 
@@ -167,7 +167,7 @@ def cherry_range(*args):
     global loop_var_next
     # TODO: Create a CherryException class
     _assert(loop_var_next < len(loop_variables), f"You exceeded the maximum number of loops allowed: {len(loop_variables)}. Use less cherry_range loops.")
-    kernel.append(f"loop_start {loop_var_next}")
+    program.append(f"loop_start {loop_var_next}")
 
     if len(args) == 1:
         slope = 1
@@ -188,12 +188,16 @@ def cherry_range(*args):
     loop_var_cur = loop_var_next
     loop_var_next += 1
     yield slope * Symbol(loop_variables[loop_var_cur]) + y_intercept
-    kernel.append("loop_end")
+    program.append("loop_end")
 
 
 @assert_program_active
-def riski_unop(op):
-    kernel.append(op)
+def cisa_unop(op):
+    program.append(op)
+
+@assert_program_active
+def cisa_binop(op):
+    program.append(op)
 
 def use_apu(address) -> int:
     # TODO: make a special apu that is just always 0 for when the formula is 0
@@ -211,25 +215,25 @@ def use_apu(address) -> int:
 def cisa_load(slot: Slot, address, reg: Reg):
     _assert(address < 2 ** address_bits[CURRENT_DEVICE_VERSION][slot], "Address is too big for the slot type you selected")
     
-    # TODO: support rest of riski_load parameters
+    # TODO: support rest of cisa_load (previously riski_load) parameters
     # TODO: more asserts that tell user what they are doing wrong
     # TODO: Help the linters understand what we want
 
-    kernel.append(f"cisa_load {use_apu(address)} {reg} {slot}")
+    program.append(f"cisa_load {use_apu(address)} {reg} {slot}")
 
 
 @assert_program_active
 def cisa_store(slot: Slot, address, reg: Reg):
     # add assert for address, need to get max possible value for address formula based on the loop iteration counts.
-    kernel.append(f"cisa_store from reg {reg} to slot {slot} apu {use_apu(address)}")
+    program.append(f"cisa_store from reg {reg} to slot {slot} apu {use_apu(address)}")
 
 @assert_program_active
 def cisa_mem_read(main_memory_address: int, slot: Slot, slot_address: int):
     # add assert for address, need to get max possible value for address formula based on the loop iteration counts.
-    kernel.append(f"cisa_mem_read from main memory addr {main_memory_address} into slot {slot} address apu {use_apu(slot_address)}")
+    program.append(f"cisa_mem_read from main memory addr {main_memory_address} into slot {slot} address apu {use_apu(slot_address)}")
 
 @assert_program_active
 def cisa_mem_write(main_memory_address: int, slot: Slot, slot_address: int):
     # need main_memory_address formula to use apu but we just want it to use 18 bit apu and we can add the 64 bit constant elsewhere.
     # add assert for address, need to get max possible value for address formula based on the loop iteration counts.
-    kernel.append(f"cisa_mem_write from slot {slot} address apu {use_apu(slot_address)} to main memory addr {main_memory_address}")
+    program.append(f"cisa_mem_write from slot {slot} address apu {use_apu(slot_address)} to main memory addr {main_memory_address}")
