@@ -74,7 +74,7 @@ module dma_uart_testbench();
 
     `TEST_SUITE("SUITE_NAME")
 
-    `UNIT_TEST("TEST_NAME")
+    `UNIT_TEST("BASIC_TEST")
         @(posedge clk); #1
         `ASSERT((busy === 0));
         
