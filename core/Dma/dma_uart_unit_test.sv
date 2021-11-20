@@ -78,13 +78,16 @@ module dma_uart_testbench();
         @(posedge clk); #1
         `ASSERT((busy === 0));
         
-        dma_dat_w = 18'b010101010101010101;
+        dma_dat_w = 18'b110101110100010101;
         dma_dat_addr = 7'b0011001;
         we = 1'b1;
         @(posedge clk); #1
         we = 1'b0;
         `ASSERT((busy === 1));
 
+        //
+        // Write command
+        //
         `ASSERT((uart_txd === 1)); // start high
         posedge_uart_and_assert_val_equal(0); // go low
         // actual data now (remmeber uart does sends out starting with LSB ending with MSB)   
@@ -92,6 +95,32 @@ module dma_uart_testbench();
             posedge_uart_and_assert_val_equal(dma_dat_addr[i]);
         end
         posedge_uart_and_assert_val_equal(1); // first bit (MSB) is saying the command is write enable
+
+
+        //
+        // Most significant bits of fp16 casted tf32
+        //
+        posedge_uart_and_assert_val_equal(1); // start high
+        posedge_uart_and_assert_val_equal(0); // go low
+        for(integer i = 10; i < 18; i = i + 1) begin
+            posedge_uart_and_assert_val_equal(dma_dat_w[i]);
+        end
+
+        //
+        // Least significant bits of cherry float casted tf32
+        //
+        posedge_uart_and_assert_val_equal(1); // start high
+        posedge_uart_and_assert_val_equal(0); // go low
+        for(integer i = 2; i < 10; i = i + 1) begin // note 2 bits of the mantissa are chopped off to cast from cherry float to fp16
+            posedge_uart_and_assert_val_equal(dma_dat_w[i]);
+        end
+
+        `ASSERT((busy === 1));
+        @(posedge clk); #1
+        `ASSERT((busy === 1));
+        wait(!busy);
+        `ASSERT((busy === 0));
+
     `UNIT_TEST_END
 
     `TEST_SUITE_END
