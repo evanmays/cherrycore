@@ -126,7 +126,7 @@ end
 
 
 uart_tx #(
-.BIT_RATE(9600),
+.BIT_RATE(4800),
 .PAYLOAD_BITS(8),
 .CLK_HZ  (CLK_HZ  )
 ) i_uart_tx(

@@ -46,7 +46,7 @@ module dma_uart_testbench();
 
     task posedge_uart_and_assert_val_equal(input val);
         begin
-            repeat(5208) begin
+            repeat(10416) begin
                 @(posedge clk);
                 //$display("%x", uart_txd);
                 //$display("%d %d %d %d", dut.S, dut.i_uart_tx.uart_tx_busy, dut.i_uart_tx.uart_tx_en, dut.i_uart_tx.fsm_state);
