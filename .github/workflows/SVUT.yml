@@ -5,6 +5,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: recursive
 #      - run: sudo add-apt-repository ppa:team-electronics/ppa -y # i think this was supposed to fix verilog in apt-get
       - run: sudo apt-get update -q
       - run: bash linux_install_icarus_verilog.sh
