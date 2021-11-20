@@ -117,8 +117,10 @@ always @(posedge clk) begin
         end
     endcase
     if (reset) begin
-        S       = IDLE;
-        busy    = 0;
+        S               = IDLE;
+        busy            = 0;
+        uart_tx_en      = 0;
+        uart_tx_data    = 0;
     end
 end
 
@@ -129,7 +131,7 @@ uart_tx #(
 .CLK_HZ  (CLK_HZ  )
 ) i_uart_tx(
 .clk          (clk          ),
-.resetn       (reset         ),
+.resetn       (!reset       ),
 .uart_txd     (uart_txd     ),
 .uart_tx_en   (uart_tx_en   ),
 .uart_tx_busy (uart_tx_busy ),

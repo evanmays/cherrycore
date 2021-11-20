@@ -44,6 +44,16 @@ module dma_uart_testbench();
     // Setup time format when printing with $realtime
     initial $timeformat(-9, 1, "ns", 8);
 
+    task posedge_uart_and_assert_val_equal(input val);
+        begin
+            repeat(5208) begin
+                @(posedge clk);
+                //$display("%x", uart_txd);
+                //$display("%d %d %d %d", dut.S, dut.i_uart_tx.uart_tx_busy, dut.i_uart_tx.uart_tx_en, dut.i_uart_tx.fsm_state);
+            end
+            #1 `ASSERT((uart_txd === val));
+        end
+    endtask
     task setup(msg="");
     begin
         /// setup() runs when a test begins
@@ -51,8 +61,8 @@ module dma_uart_testbench();
         @(posedge clk); #1
         reset = 0;
         @(posedge clk); #1
-        `ASSERT((busy == 0));
-        `ASSERT((uart_txd == 1));
+        `ASSERT((busy === 0));
+        `ASSERT((uart_txd === 1));
     end
     endtask
 
@@ -66,16 +76,22 @@ module dma_uart_testbench();
 
     `UNIT_TEST("TEST_NAME")
         @(posedge clk); #1
-        `ASSERT((busy == 0));
-        $display("%x", uart_txd);
+        `ASSERT((busy === 0));
         
-        dma_dat_w = 18'd20;
-        dma_dat_addr = 7'd9;
+        dma_dat_w = 18'b010101010101010101;
+        dma_dat_addr = 7'b0011001;
         we = 1'b1;
         @(posedge clk); #1
-        `ASSERT((busy == 1));
-        // sample uart_txd at baud rate and assert it's value
+        we = 1'b0;
+        `ASSERT((busy === 1));
 
+        `ASSERT((uart_txd === 1)); // start high
+        posedge_uart_and_assert_val_equal(0); // go low
+        // actual data now (remmeber uart does sends out starting with LSB ending with MSB)   
+        for(integer i = 0; i < 7; i = i + 1) begin
+            posedge_uart_and_assert_val_equal(dma_dat_addr[i]);
+        end
+        posedge_uart_and_assert_val_equal(1); // first bit (MSB) is saying the command is write enable
     `UNIT_TEST_END
 
     `TEST_SUITE_END
