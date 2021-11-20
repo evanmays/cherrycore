@@ -78,6 +78,19 @@ else
     echo "OK testsuite execution completed successfully ^^"
 fi
 
+# Low performance DMA UART Test Suite
+cd core/Dma
+"svutRun" -test "dma_uart_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
+cd ../../
+ret=$?
+
+if [[ $ret != 0 ]]; then
+    echo "Execution failed but should not..."
+    exit 1
+else
+    echo "OK testsuite execution completed successfully ^^"
+fi
+
 # Add more testsuites here
 
 echo "Regression finished successfully. SVUT sounds alive ^^"

@@ -117,7 +117,8 @@ always @(posedge clk) begin
         end
     endcase
     if (reset) begin
-        S <= IDLE;
+        S       = IDLE;
+        busy    = 0;
     end
 end
 
