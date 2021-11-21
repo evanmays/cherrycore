@@ -11,25 +11,20 @@ module dcache_testbench();
     `SVUT_SETUP
 
     reg clk;
-    reg [1:0]     dma_slot;
-    reg [10:0]    dma_addr;
-    reg dma_we;
-    reg [17:0]    dma_dat_w;
-    reg dma_re;
-    logic  [17:0]    dma_dat_r;
-    logic dma_dcache_read_complete;
+    reg [1:0]     write_slot, read_slot;
+    reg [10:0]    write_addr, read_addr;
+    reg we, re;
+    reg [17:0]    dat_w;
+    logic  [17:0]    dat_r;
+    logic read_complete;
 
     dcache
     dut
     (
-    clk,
-    dma_slot,
-    dma_addr,
-    dma_we,
-    dma_dat_w,
-    dma_re,
-    dma_dat_r,
-    dma_dcache_read_complete
+    .clk(clk),
+    .dma_write_port({write_slot, write_addr, we, dat_w}),
+    .dma_read_port_in({read_slot, read_addr, re}),
+    .dma_read_port_out({dat_r, read_complete})
     );
 
     // To create a clock:
@@ -60,32 +55,40 @@ module dcache_testbench();
     `TEST_SUITE("SUITE_NAME")
 
     `UNIT_TEST("BASIC_TEST")
-        dma_slot = 2'd2;
-        dma_addr = 11'd0;
-        dma_we = 1;
-        dma_dat_w = 18'd3423;
-        dma_re = 0;
+        // write
+        write_slot = 2'd2;
+        write_addr = 11'd0;
+        we = 1;
+        dat_w = 18'd3423;
+        re = 0;
         @(posedge clk); #1
-        `ASSERT((dma_dcache_read_complete === 0));
+        `ASSERT((read_complete === 0));
+        `ASSERT((dut.single_tile_slot === dat_w));
 
-        dma_we = 0;
-        dma_dat_w = 18'd1337;
-        dma_re = 1;
+        // read
+        we = 0;
+        dat_w = 18'd1337;
+        re = 1;
+        read_addr = 11'd0;
+        read_slot = 2'd2;
         @(posedge clk); #1
-        `ASSERT((dma_dat_r === 18'd3423));
-        `ASSERT((dma_dcache_read_complete === 1));
+        `ASSERT((dat_r === 18'd3423));
+        `ASSERT((read_complete === 1));
 
-        dma_we = 1;
-        dma_re = 0;
+        // write and read
+        we = 1;
+        re = 1;
+        read_addr = 11'd0;
         @(posedge clk); #1
-        `ASSERT((dma_dat_r === 18'd3423));
-        `ASSERT((dma_dcache_read_complete === 0));
+        `ASSERT((dat_r === 18'd3423));
+        `ASSERT((read_complete === 1));
 
-        dma_we = 0;
-        dma_re = 1;
+        // read
+        we = 0;
+        re = 1;
         @(posedge clk); #1
-        `ASSERT((dma_dat_r === 18'd1337));
-        `ASSERT((dma_dcache_read_complete === 1));
+        `ASSERT((dat_r === 18'd1337));
+        `ASSERT((read_complete === 1));
 
     `UNIT_TEST_END
 

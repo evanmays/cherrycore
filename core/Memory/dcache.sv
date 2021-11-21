@@ -1,19 +1,35 @@
+typedef struct packed {
+  logic       [1:0]     slot;
+  logic       [10:0]    addr;
+  logic                 we;
+  logic       [17:0]    dat_w;
+} dcache_write_port_dma;
+
+typedef struct packed {
+  logic       [1:0]     slot;
+  logic       [10:0]    addr;
+  logic                 re;
+} dcache_read_port_dma_1;
+
+typedef struct packed {
+  logic       [17:0]    dat_r;
+  logic                 read_complete;
+} dcache_read_port_dma_2;
+
+
 module dcache (
   input clk,
-
-  // TODO: support Memory Instructions that read/write regfile
+  // TODO: Support regfile bus
 
   // DMA Instructions
-  input       [1:0]     dma_slot,
-  input       [10:0]    dma_addr, // todo: this is ignored because we only support single tile slot. Use it when we add other slot types
-  input                 dma_we,
-  input       [17:0]    dma_dat_w,
-  input                 dma_re,
-  output reg  [17:0]    dma_dat_r,
-  output reg            dma_dcache_read_complete
+  input   dcache_write_port_dma   dma_write_port,
+  input   dcache_read_port_dma_1  dma_read_port_in,
+  output  dcache_read_port_dma_2  dma_read_port_out
 );
 
 reg [17:0] single_tile_slot;
+
+localparam SLOT_SINGLE_TILE = 2'd2;
 
 always @(posedge clk) begin
   //
@@ -23,14 +39,18 @@ always @(posedge clk) begin
   //
   // DMA Accessing its ports
   //
-  dma_dcache_read_complete <= dma_re;
-  if (dma_we | dma_re) begin
-    case (dma_slot)
-      // TODO: support other slots
-      2'd2 : begin
-        // single tile slot
-        if (dma_we) single_tile_slot <= dma_dat_w;
-        if (dma_re) dma_dat_r <= single_tile_slot;
+  if (dma_write_port.we) begin
+    case (dma_write_port.slot)
+      SLOT_SINGLE_TILE : begin
+        single_tile_slot <= dma_write_port.dat_w;
+      end
+    endcase
+  end
+  dma_read_port_out.read_complete <= dma_read_port_in.re;
+  if (dma_read_port_in.re) begin
+    case (dma_read_port_in.slot)
+      SLOT_SINGLE_TILE : begin
+        dma_read_port_out.dat_r <= single_tile_slot;
       end
     endcase
   end
