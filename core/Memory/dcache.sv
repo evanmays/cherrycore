@@ -1,3 +1,40 @@
+module dcache (
+  input clk,
+
+  // TODO: support Memory Instructions that read/write regfile
+
+  // DMA Instructions
+  input       [1:0]     dma_slot,
+  input       [10:0]    dma_addr, // todo: this is ignored because we only support single tile slot. Use it when we add other slot types
+  input                 dma_we,
+  input       [17:0]    dma_dat_w,
+  input                 dma_re,
+  output reg  [17:0]    dma_dat_r
+);
+
+reg [17:0] single_tile_slot;
+
+always @(posedge clk) begin
+  //
+  // TODO: Memory Instructions/Regfile accessing its ports
+  //
+
+  //
+  // DMA Accessing its ports
+  //
+  if (dma_we | dma_re) begin
+    case (dma_slot)
+      // TODO: support other slots
+      2'd2 : begin
+        // single tile slot
+        if (dma_we) single_tile_slot <= dma_dat_w;
+        if (dma_re) dma_dat_r <= single_tile_slot;
+      end
+    endcase
+  end
+end
+endmodule
+
 // RISK extensions
 // 4x4 registers
 // we have 270 18-bit rams, need this instead of 19. depth is 1024
