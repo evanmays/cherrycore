@@ -22,14 +22,14 @@ module dma_uart_testbench();
     dma_uart 
     dut 
     (
-    clk,
-    reset,
-    dma_dat_w,
-    dma_dat_addr,
-    we,
-    busy,
-    uart_rxd,
-    uart_txd
+    .clk(clk),
+    .reset(reset),
+    .dma_dat_w(dma_dat_w),
+    .dma_dat_addr(dma_dat_addr),
+    .we(we),
+    .busy(busy),
+    .uart_rxd(uart_rxd),
+    .uart_txd(uart_txd)
     );
 
     initial clk = 0;
