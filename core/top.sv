@@ -16,11 +16,11 @@ reg                 re;
 
 wire [17:0]   cherry_float;
 wire [6:0]    addr;
-wire          we;
+wire          dma_we;
 wire          dma_busy;
 assign cherry_float  = 18'd34133;
 assign addr          = 7'd120;
-assign we            = !freeze && dma_instr[21];
+assign dma_we        = !freeze & dma_instr[21] & dma_instr[20]; // not froze, dma instruction non empty, dma instrcuton is a write
 
 
 // stop reading when frozen
@@ -46,7 +46,7 @@ dma_uart dma (
 .reset(sw_0),
 .dma_dat_w(cherry_float),
 .dma_dat_addr(addr),
-.we(we),
+.we(dma_we),
 .busy(dma_busy),
 
 // board pins
