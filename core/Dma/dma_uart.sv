@@ -5,16 +5,28 @@ function [15:0] fp16;
 	end
 endfunction
 
+// lol this conversion and fp16 conversion are wrong. TODO: Lets do fp32 dma so conversions can be easier
+function [17:0] cherry_float;
+	input [15:0] fp16;
+	begin
+		cherry_float = {fp16, 2'd0}; // add 2 least signifcant 2
+	end
+endfunction
+
 // Low performance DMA engine
 // Only supports one direction at a time and casts your cherry float to fp16
 // Only supports 7 bit host address.
 module dma_uart #(parameter CLK_HZ=50000000) (
 input               clk     , // Top level system clock input.
 input               reset ,
-input   [17:0]      dma_dat_w,
 input   [6:0]       dma_dat_addr,
+input   [17:0]      dma_dat_w,
 input               we,
+output  reg [17:0]  dma_dat_r,
+input               re,
 output  reg         busy,
+
+output  reg         cache_cmd_we,
 
 // board pins
 input   wire        uart_rxd, // UART Recieve pin.
@@ -67,6 +79,11 @@ always @(posedge clk) begin
                 busy    = 1;
                 S       = SEND_WRITE_COMMAND_0;
                 float   = fp16(dma_dat_w);
+            end
+            cache_cmd_we = re;
+            if (re) begin
+                // TODO actually get this data from DMA
+                dma_dat_r   = cherry_float(16'd45117);
             end
         end
         SEND_WRITE_COMMAND_0:  begin
@@ -121,6 +138,7 @@ always @(posedge clk) begin
         busy            = 0;
         uart_tx_en      = 0;
         uart_tx_data    = 0;
+        cache_cmd_we    = 0;
     end
 end
 
