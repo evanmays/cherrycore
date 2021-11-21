@@ -9,7 +9,8 @@ module dcache (
   input                 dma_we,
   input       [17:0]    dma_dat_w,
   input                 dma_re,
-  output reg  [17:0]    dma_dat_r
+  output reg  [17:0]    dma_dat_r,
+  output reg            dma_dcache_read_complete
 );
 
 reg [17:0] single_tile_slot;
@@ -22,6 +23,7 @@ always @(posedge clk) begin
   //
   // DMA Accessing its ports
   //
+  dma_dcache_read_complete <= dma_re;
   if (dma_we | dma_re) begin
     case (dma_slot)
       // TODO: support other slots
