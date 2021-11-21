@@ -18,7 +18,8 @@ module testbench;
 
 
   reg reset;
-  wire [77:0] dma_instr;
+  wire [21:0] dma_instr;
+  reg re;
   wire arithmetic_instr;
   wire [16:0] cache_instr;
   wire empty;
@@ -26,6 +27,7 @@ module testbench;
   fake_queue #(SZ, LOGCNT, BITS) q (
     .reset(reset),
     .clk (clk),
+    .re(re),
     .dma_instr (dma_instr),
     .arithmetic_instr (arithmetic_instr),
     .cache_instr (cache_instr),
@@ -36,6 +38,7 @@ module testbench;
     reset = 1'b1;
     #10
     reset = 1'b0;
+    re = 1'b1;
   end
 
   always @(posedge clk) begin
