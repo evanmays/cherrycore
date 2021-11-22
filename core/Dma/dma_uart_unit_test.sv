@@ -2,7 +2,9 @@
 `include "svut_h.sv"
 
 `include "../../bigvendor/uart/rtl/uart_tx.v"
+`include "../types.sv"
 `include "dma_uart.sv"
+
 
 `timescale 1 ns / 100 ps
 
@@ -13,21 +15,21 @@ module dma_uart_testbench();
     logic clk     ;
     logic reset ;
     logic [17:0]      dma_dat_w;
-    logic [6:0]       dma_dat_addr;
+    logic [6:0]       host_mem_addr;
     logic we;
     logic         busy;
     logic        uart_rxd;
     logic        uart_txd;
+    dma_stage_3_instr cache_write_port;
 
     dma_uart 
     dut 
     (
     .clk(clk),
     .reset(reset),
-    .dma_dat_w(dma_dat_w),
-    .dma_dat_addr(dma_dat_addr),
-    .we(we),
+    .instr({dma_dat_w, 1'b1, we, host_mem_addr, 2'd2, 11'd0}),
     .busy(busy),
+    .cache_write_port(cache_write_port),
     .uart_rxd(uart_rxd),
     .uart_txd(uart_txd)
     );
@@ -79,7 +81,7 @@ module dma_uart_testbench();
         `ASSERT((busy === 0));
         
         dma_dat_w = 18'b110101110100010101;
-        dma_dat_addr = 7'b0011001;
+        host_mem_addr = 7'b0011001;
         we = 1'b1;
         @(posedge clk); #1
         we = 1'b0;
@@ -92,7 +94,7 @@ module dma_uart_testbench();
         posedge_uart_and_assert_val_equal(0); // go low
         // actual data now (remmeber uart does sends out starting with LSB ending with MSB)   
         for(integer i = 0; i < 7; i = i + 1) begin
-            posedge_uart_and_assert_val_equal(dma_dat_addr[i]);
+            posedge_uart_and_assert_val_equal(host_mem_addr[i]);
         end
         posedge_uart_and_assert_val_equal(1); // first bit (MSB) is saying the command is write enable
 
@@ -120,6 +122,20 @@ module dma_uart_testbench();
         `ASSERT((busy === 1));
         wait(!busy);
         `ASSERT((busy === 0));
+
+    `UNIT_TEST_END
+
+    `UNIT_TEST("BASIC_READ")
+        `ASSERT((busy === 0));
+        dma_dat_w = 0;
+        host_mem_addr = 0;
+        we = 1'b0;
+        @(posedge clk); #1
+        `ASSERT((busy === 0));
+        `ASSERT((cache_write_port.dat === (18'd1337 << 2)));
+        `ASSERT((cache_write_port.raw_instr_data.valid === 1'b1));
+        `ASSERT((cache_write_port.raw_instr_data.mem_we === 1'b0));
+        `ASSERT((cache_write_port.raw_instr_data.cache_slot === 2'd2));
 
     `UNIT_TEST_END
 

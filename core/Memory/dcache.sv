@@ -14,7 +14,7 @@ reg [17:0] single_tile_slot;
 
 localparam SLOT_SINGLE_TILE = 2'd2;
 
-always @(posedge clk) begin
+always_ff @(posedge clk) begin
   //
   // TODO: Memory Instructions/Regfile accessing its ports
   //
@@ -24,11 +24,11 @@ always @(posedge clk) begin
     // DMA Accessing its ports
     //
     // Stage 1
-    dma_read_port_out[21:0]  = dma_read_port_in; //dma_read_port_out.dat = will synthesize in iverilog but not yosys. Yosys loves to fail silently and claim it's an implicit port declaration
+    dma_read_port_out[21:0]  <= dma_read_port_in; //dma_read_port_out.dat = will synthesize in iverilog but not yosys. Yosys loves to fail silently and claim it's an implicit port declaration
     if (dma_read_port_in.raw_instr_data.valid && dma_read_port_in.raw_instr_data.mem_we) begin // some reason a single ampersand doesn't work here
       case (dma_read_port_in.raw_instr_data.cache_slot)
         SLOT_SINGLE_TILE : begin
-          dma_read_port_out[39:22] = single_tile_slot; // ditto
+          dma_read_port_out[39:22] <= single_tile_slot; // ditto
         end
       endcase
     end
@@ -36,7 +36,7 @@ always @(posedge clk) begin
     if (dma_write_port.raw_instr_data.valid & !dma_write_port.raw_instr_data.mem_we) begin
       case (dma_write_port.raw_instr_data.cache_slot)
         SLOT_SINGLE_TILE : begin
-          single_tile_slot = dma_write_port.dat;
+          single_tile_slot <= dma_write_port.dat;
         end
       endcase
     end

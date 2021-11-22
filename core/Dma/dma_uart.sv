@@ -17,21 +17,18 @@ endfunction
 // Only supports one direction at a time and casts your cherry float to fp16
 // Only supports 7 bit host address.
 module dma_uart #(parameter CLK_HZ=50000000) (
-input               clk     , // Top level system clock input.
-input               reset ,
-input   [6:0]       dma_dat_addr,
-input   [17:0]      dma_dat_w,
-input               we,
-output  reg [17:0]  dma_dat_r,
-input               re,
-output  reg         busy,
+input                       clk,
+input                       reset,
+input   dma_stage_2_instr   instr,
 
-output  reg         cache_cmd_we,
+output  reg                 busy,
+
+// Control cache
+output  dma_stage_3_instr   cache_write_port,
 
 // board pins
 input   wire        uart_rxd, // UART Recieve pin.
 output  wire        uart_txd  // UART transmit pin.
-
 );
 // def access_dma(f, write_enable):
 //     set busy to true
@@ -72,73 +69,75 @@ reg [7:0]   uart_tx_data;
 reg         uart_tx_en;
 wire        uart_tx_busy;
 reg [15:0]  float;
-always @(posedge clk) begin
+reg [6:0]  addr;
+always_ff @(posedge clk) begin
     case (S)
         IDLE: begin
-            if (we) begin
-                busy    = 1;
-                S       = SEND_WRITE_COMMAND_0;
-                float   = fp16(dma_dat_w);
-            end
-            cache_cmd_we = re;
-            if (re) begin
-                // TODO actually get this data from DMA
-                dma_dat_r   = cherry_float(16'd45117);
-            end
+            cache_write_port <= instr; //TODO: since yosys language built in wont let me cache_write_port.raw_instr_data im just overrwriting the entire thing. figure out how to fix
+            if (instr.raw_instr_data.valid) begin
+                if (instr.raw_instr_data.mem_we) begin
+                    busy    <= 1;
+                    S       <= SEND_WRITE_COMMAND_0;
+                    float   <= fp16(instr.dat);
+                    addr    <= instr.raw_instr_data.main_mem_addr;
+                end else begin
+                    cache_write_port[39:22]    <= cherry_float(16'd1337); // TODO actually get this float from DMA
+                end
+            end         
         end
         SEND_WRITE_COMMAND_0:  begin
-            uart_tx_en      = 1;
-            uart_tx_data    = {1'b1, dma_dat_addr};
-            S               = SEND_WRITE_COMMAND_1;
+            uart_tx_en      <= 1;
+            uart_tx_data    <= {1'b1, addr};
+            S               <= SEND_WRITE_COMMAND_1;
         end
         SEND_WRITE_COMMAND_1: begin
-            uart_tx_en = 0;
-            S = SEND_WRITE_COMMAND_2;
+            uart_tx_en <= 0;
+            S <= SEND_WRITE_COMMAND_2;
         end
         SEND_WRITE_COMMAND_2: begin
             if (!uart_tx_busy) begin
-                S = SEND_MSB_0;
+                S <= SEND_MSB_0;
             end
         end
         SEND_MSB_0: begin
-            uart_tx_en      = 1;
-            uart_tx_data    = float[15:8];
-            S               = SEND_MSB_1;
+            uart_tx_en      <= 1;
+            uart_tx_data    <= float[15:8];
+            S               <= SEND_MSB_1;
         end
         SEND_MSB_1: begin
-            uart_tx_en = 0;
-            S = SEND_MSB_2;
+            uart_tx_en <= 0;
+            S <= SEND_MSB_2;
         end
         SEND_MSB_2: begin
             if (!uart_tx_busy) begin
-                S = SEND_LSB_0;
+                S <= SEND_LSB_0;
             end
         end
         SEND_LSB_0: begin
-            uart_tx_en      = 1;
-            uart_tx_data    = float[7:0];
-            S               = SEND_LSB_1;
+            uart_tx_en      <= 1;
+            uart_tx_data    <= float[7:0];
+            S               <= SEND_LSB_1;
         end
         SEND_LSB_1: begin
-            uart_tx_en = 0;
-            S = SEND_LSB_2;
+            uart_tx_en <= 0;
+            S <= SEND_LSB_2;
         end
         SEND_LSB_2: begin
             if (!uart_tx_busy) begin
-                S = FINISH;
+                S <= FINISH;
             end
         end
         FINISH: begin
-            busy    = 0;
-            S       = IDLE;
+            busy    <= 0;
+            S       <= IDLE;
         end
     endcase
     if (reset) begin
-        S               = IDLE;
-        busy            = 0;
-        uart_tx_en      = 0;
-        uart_tx_data    = 0;
-        cache_cmd_we    = 0;
+        S               <= IDLE;
+        busy            <= 0;
+        uart_tx_en      <= 0;
+        uart_tx_data    <= 0;
+        cache_write_port  <= 0;
     end
 end
 

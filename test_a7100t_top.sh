@@ -4,8 +4,8 @@ mkdir -p out
 cd out
 UART=../bigvendor/uart
 # synthesize with iverilog just since it has better error checking than yosys. We won't actually use iverilog's output
-iverilog -g2012 ../core/FIFO/fake_instruction_queue.sv $UART/rtl/uart_tx.v ../core/Dma/dma_uart.sv ../core/Memory/dcache.sv ../core/top.sv
-/usr/local/bin/yosys  -p "synth_xilinx -flatten -nowidelut -family xc7 -top top; write_json attosoc.json" ../core/FIFO/fake_instruction_queue.sv $UART/rtl/uart_tx.v ../core/Dma/dma_uart.sv ../core/Memory/dcache.sv ../core/top.sv 
+iverilog -g2012 -Wall ../core/types.sv ../core/Memory/dcache.sv ../core/FIFO/fake_instruction_queue.sv $UART/rtl/uart_tx.v ../core/Dma/dma_uart.sv ../core/top.sv
+/usr/local/bin/yosys  -p "synth_xilinx -flatten -nowidelut -family xc7 -top top; write_json attosoc.json" ../core/types.sv ../core/Memory/dcache.sv ../core/FIFO/fake_instruction_queue.sv $UART/rtl/uart_tx.v ../core/Dma/dma_uart.sv ../core/top.sv 
 $HOME/cherry/nextpnr-xilinx/nextpnr-xilinx --freq 50 --chipdb $HOME/cherry/nextpnr-xilinx/xilinx/xc7a100t.bin --xdc $UART/constraints/defaults.xdc --json attosoc.json --write attosoc_routed.json --fasm attosoc.fasm
 
 XRAY_UTILS_DIR=$HOME/cherry/prjxray/utils
