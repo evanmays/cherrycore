@@ -6,64 +6,50 @@ output  wire        uart_txd,  // UART transmit pin.
 output  wire [7:0]  led
 );
 wire                freeze;
-assign freeze = queue_empty | dma_busy;
-assign led[7] = freeze;
-// assign led[5] = queue_empty;
-assign led[0] = dma_busy;
+assign freeze = dma_busy;
+assign led[1] = freeze;
+//assign led[5] = queue_empty;
+assign led[2] = dma_stage_3_dcache_write.raw_instr_data.valid;
+wire                  queue_empty;
 
-wire                queue_empty;
-wire [21:0]         dma_instr;
-reg                 re;
+dma_stage_1_instr   dma_stage_1_dcache_read;
+dma_stage_2_instr   dma_stage_2_execute;
+dma_stage_3_instr   dma_stage_3_dcache_write;
 
-wire [6:0]    addr;
-wire [17:0]   cherry_float_w;
-wire          dma_we;
-wire [17:0]   cherry_float_r;
-wire          dma_re;
 wire          dma_busy;
-assign addr           = 7'd120;
-assign cherry_float_w = cherry_float_r; // write to dma the most recently read value from dma. Requires a write to occur after atleast 1 read
-assign dma_we         = !freeze & dma_instr[21] &  dma_instr[20]; // not froze, dma instruction non empty, dma instrcuton is a write
-assign dma_re         = !freeze & dma_instr[21] & !dma_instr[20]; // not froze, dma instruction non empty, dma instrcuton is a read
-
-
-// stop reading when frozen
-assign re = sw_0 ? 1 : !freeze;
-// always @(posedge clk) begin
-//   if (sw_0) begin
-//     re <= 1;
-//   end else begin
-//     re <= !freeze;
-//   end
-// end
-
+wire q_re;
+assign q_re = !queue_empty & !freeze; // do we lose data?
 fake_queue queue (
 .clk(clk),
 .reset(sw_0),
-.dma_instr(dma_instr),
+.dma_instr(dma_stage_1_dcache_read),
 .empty(queue_empty),
-.re(re)
+.re(q_re)
 );
 
 dma_uart dma (
 .clk(clk),
 .reset(sw_0),
-.dma_dat_addr(addr),
-.dma_dat_w(cherry_float_w),
-.we(dma_we),
-.dma_dat_r(cherry_float_r),
-.re(dma_re),
+.instr(dma_stage_2_execute),
 .busy(dma_busy),
+// .freeze(freeze), jk, no one can freeze the DMA
 
 // command cache signals
-.cache_cmd_we(cache_cmd_we),
-
-
+.cache_write_port(dma_stage_3_dcache_write),
 
 // board pins
 .uart_rxd(uart_rxd), // UART Recieve pin.
 .uart_txd(uart_txd)  // UART transmit pin.
 
+);
+
+dcache dcache (
+.clk(clk),
+.dma_read_port_in   (dma_stage_1_dcache_read),
+.dma_read_port_out  (dma_stage_2_execute),
+.dma_write_port     (dma_stage_3_dcache_write),
+.reset(sw_0),
+.freeze(freeze)
 );
 
 endmodule
