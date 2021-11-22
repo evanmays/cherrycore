@@ -25,8 +25,15 @@ typedef struct packed {
 } dma_stage_3_instr; // Used in stage 3: Write cache
 
 //
-// TODO: Regfile Pipeline Data
+// Regfile Pipeline Data
 //
+typedef struct packed {
+  logic         valid;
+  logic         is_load;
+  logic [1:0]   cache_slot;
+  logic [10:0]  cache_addr;
+  logic [1:0]   regfile_reg;
+} regfile_instruction;
 
 //
 // TODO: Processing Pipeline Data
