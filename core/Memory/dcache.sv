@@ -1,30 +1,13 @@
-typedef struct packed {
-  logic       [1:0]     slot;
-  logic       [10:0]    addr;
-  logic                 we;
-  logic       [17:0]    dat_w;
-} dcache_write_port_dma;
-
-typedef struct packed {
-  logic       [1:0]     slot;
-  logic       [10:0]    addr;
-  logic                 re;
-} dcache_read_port_dma_1;
-
-typedef struct packed {
-  logic       [17:0]    dat_r;
-  logic                 read_complete;
-} dcache_read_port_dma_2;
-
-
 module dcache (
   input clk,
+  input reset,
+  input freeze,
   // TODO: Support regfile bus
 
   // DMA Instructions
-  input   dcache_write_port_dma   dma_write_port,
-  input   dcache_read_port_dma_1  dma_read_port_in,
-  output  dcache_read_port_dma_2  dma_read_port_out
+  input   dma_stage_1_instr  dma_read_port_in,
+  output  dma_stage_2_instr  dma_read_port_out,
+  input   dma_stage_3_instr  dma_write_port
 );
 
 reg [17:0] single_tile_slot;
@@ -35,25 +18,36 @@ always @(posedge clk) begin
   //
   // TODO: Memory Instructions/Regfile accessing its ports
   //
+  if (!freeze) begin
+      
+    //
+    // DMA Accessing its ports
+    //
+    // Stage 1
+    //$display("%x %x %x", dma_read_port_in.raw_instr_data, dma_read_port_out.raw_instr_data, dma_write_port.raw_instr_data);
+    //#1 $display("raw %d", dma_write_port.raw_instr_data);
+    dma_read_port_out.raw_instr_data  <= dma_read_port_in;
+    if (dma_read_port_in.raw_instr_data.valid && dma_read_port_in.raw_instr_data.mem_we) begin // some reason a single ampersand doesn't work here
+      case (dma_read_port_in.raw_instr_data.cache_slot)
+        SLOT_SINGLE_TILE : begin
+          dma_read_port_out.dat <= single_tile_slot;
+        end
+      endcase
+    end
+    // Stage 3
+    //$display("HERE %x %x", dma_write_port.raw_instr_data.valid, !dma_write_port.raw_instr_data.mem_we);
+    if (dma_write_port.raw_instr_data.valid && !dma_write_port.raw_instr_data.mem_we) begin
+      //$display("HERE???");
+      case (dma_write_port.raw_instr_data.cache_slot)
+        SLOT_SINGLE_TILE : begin
+          //$display("WRITING %x", dma_write_port.dat);
+          single_tile_slot <= dma_write_port.dat;
+        end
+      endcase
+    end
+  end
 
-  //
-  // DMA Accessing its ports
-  //
-  if (dma_write_port.we) begin
-    case (dma_write_port.slot)
-      SLOT_SINGLE_TILE : begin
-        single_tile_slot <= dma_write_port.dat_w;
-      end
-    endcase
-  end
-  dma_read_port_out.read_complete <= dma_read_port_in.re;
-  if (dma_read_port_in.re) begin
-    case (dma_read_port_in.slot)
-      SLOT_SINGLE_TILE : begin
-        dma_read_port_out.dat_r <= single_tile_slot;
-      end
-    endcase
-  end
+  if (reset) dma_read_port_out <= 0;
 end
 endmodule
 

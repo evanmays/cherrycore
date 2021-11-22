@@ -2,6 +2,7 @@
 `include "svut_h.sv"
 
 /// Specify the module to load or on files.f
+`include "../types.sv"
 `include "dcache.sv"
 
 `timescale 1 ns / 100 ps
@@ -11,20 +12,21 @@ module dcache_testbench();
     `SVUT_SETUP
 
     reg clk;
-    reg [1:0]     write_slot, read_slot;
-    reg [10:0]    write_addr, read_addr;
-    reg we, re;
-    reg [17:0]    dat_w;
-    logic  [17:0]    dat_r;
-    logic read_complete;
+    logic reset, freeze;
+    dma_stage_1_instr read_instr;
+    dma_stage_2_instr exec_instr;
+    dma_stage_3_instr write_instr;
+    logic we, re;
 
     dcache
     dut
     (
     .clk(clk),
-    .dma_write_port({write_slot, write_addr, we, dat_w}),
-    .dma_read_port_in({read_slot, read_addr, re}),
-    .dma_read_port_out({dat_r, read_complete})
+    .dma_read_port_in(read_instr),
+    .dma_read_port_out(exec_instr),
+    .dma_write_port(write_instr),
+    .freeze(freeze),
+    .reset(reset)
     );
 
     // To create a clock:
@@ -37,6 +39,16 @@ module dcache_testbench();
     //     $dumpvars(0, single_dcache_mem_testbench);
     // end
 
+    task set_we(on);
+    begin
+        write_instr.raw_instr_data.mem_we = !on;
+    end
+    endtask
+    task set_re(on);
+    begin
+        read_instr.raw_instr_data.mem_we = on;
+    end
+    endtask
     // Setup time format when printing with $realtime
     initial $timeformat(-9, 1, "ns", 8);
 
@@ -55,40 +67,45 @@ module dcache_testbench();
     `TEST_SUITE("SUITE_NAME")
 
     `UNIT_TEST("BASIC_TEST")
+        freeze = 0;
+        reset = 0;
+
         // write
-        write_slot = 2'd2;
-        write_addr = 11'd0;
-        we = 1;
-        dat_w = 18'd3423;
-        re = 0;
+        write_instr.raw_instr_data.valid = 1'd1;
+        write_instr.raw_instr_data.cache_slot = 2'd2;
+        write_instr.raw_instr_data.cache_addr = 2'd2;
+        set_we(1);
+        write_instr.dat = 18'd3423;
+        set_re(0);
         @(posedge clk); #1
-        `ASSERT((read_complete === 0));
-        `ASSERT((dut.single_tile_slot === dat_w));
+        `ASSERT((exec_instr.raw_instr_data === read_instr.raw_instr_data));
+        `ASSERT((dut.single_tile_slot === write_instr.dat));
 
         // read
-        we = 0;
-        dat_w = 18'd1337;
-        re = 1;
-        read_addr = 11'd0;
-        read_slot = 2'd2;
+        set_we(0);
+        write_instr.dat = 18'd1337;
+        set_re(1);
+        read_instr.raw_instr_data.valid = 1'd1;
+        read_instr.raw_instr_data.cache_slot = 2'd2;
+        read_instr.raw_instr_data.cache_addr = 11'd0;
         @(posedge clk); #1
-        `ASSERT((dat_r === 18'd3423));
-        `ASSERT((read_complete === 1));
+        `ASSERT((exec_instr.dat === 18'd3423));
+        `ASSERT((exec_instr.raw_instr_data === read_instr.raw_instr_data));
 
         // write and read
-        we = 1;
-        re = 1;
-        read_addr = 11'd0;
+        set_we(1);
+        set_re(1);
+        read_instr.raw_instr_data.cache_addr = 11'd0;
         @(posedge clk); #1
-        `ASSERT((dat_r === 18'd3423));
-        `ASSERT((read_complete === 1));
+        `ASSERT((exec_instr.dat === 18'd3423));
+        `ASSERT((exec_instr.raw_instr_data === read_instr.raw_instr_data));
 
         // read
-        we = 0;
-        re = 1;
+        set_we(0);
+        set_re(1);
         @(posedge clk); #1
-        `ASSERT((dat_r === 18'd1337));
-        `ASSERT((read_complete === 1));
+        `ASSERT((exec_instr.dat === 18'd1337));
+        `ASSERT((exec_instr.raw_instr_data === read_instr.raw_instr_data));
 
     `UNIT_TEST_END
 
