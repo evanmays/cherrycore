@@ -24,24 +24,19 @@ always @(posedge clk) begin
     // DMA Accessing its ports
     //
     // Stage 1
-    //$display("%x %x %x", dma_read_port_in.raw_instr_data, dma_read_port_out.raw_instr_data, dma_write_port.raw_instr_data);
-    //#1 $display("raw %d", dma_write_port.raw_instr_data);
-    dma_read_port_out.raw_instr_data  <= dma_read_port_in;
+    dma_read_port_out[21:0]  = dma_read_port_in; //dma_read_port_out.dat = will synthesize in iverilog but not yosys. Yosys loves to fail silently and claim it's an implicit port declaration
     if (dma_read_port_in.raw_instr_data.valid && dma_read_port_in.raw_instr_data.mem_we) begin // some reason a single ampersand doesn't work here
       case (dma_read_port_in.raw_instr_data.cache_slot)
         SLOT_SINGLE_TILE : begin
-          dma_read_port_out.dat <= single_tile_slot;
+          dma_read_port_out[39:22] = single_tile_slot; // ditto
         end
       endcase
     end
     // Stage 3
-    //$display("HERE %x %x", dma_write_port.raw_instr_data.valid, !dma_write_port.raw_instr_data.mem_we);
-    if (dma_write_port.raw_instr_data.valid && !dma_write_port.raw_instr_data.mem_we) begin
-      //$display("HERE???");
+    if (dma_write_port.raw_instr_data.valid & !dma_write_port.raw_instr_data.mem_we) begin
       case (dma_write_port.raw_instr_data.cache_slot)
         SLOT_SINGLE_TILE : begin
-          //$display("WRITING %x", dma_write_port.dat);
-          single_tile_slot <= dma_write_port.dat;
+          single_tile_slot = dma_write_port.dat;
         end
       endcase
     end
