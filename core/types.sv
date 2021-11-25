@@ -36,5 +36,10 @@ typedef struct packed {
 } regfile_instruction;
 
 //
-// TODO: Processing Pipeline Data
+// Processing Pipeline Data
 //
+typedef struct packed {
+  logic       valid;
+  logic [1:0] reg_in;
+  logic [1:0] reg_out;
+} arithmetic_instruction;

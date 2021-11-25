@@ -14,18 +14,21 @@ module cache_instruction_pipeline(
 
   // Stage 2
   output  reg [0:1]           regfile_write_addr,
-  output  reg [0:17]          regfile_dat_w,
+  output  wire[0:17]          regfile_dat_w,
   output  reg                 regfile_we,
   output  reg [12:0]          cache_write_addr,
-  output  reg [0:17]          cache_dat_w,
+  output  wire[0:17]          cache_dat_w,
   output  reg                 cache_we
 );
 
 regfile_instruction instr_1, instr_2;
 assign instr_1 = instr;
 
+assign cache_dat_w = regfile_dat_r;
+assign regfile_dat_w = cache_dat_r;
+
 //
-// Stage 1: Read from regfile or memory
+// Stage 1: Register the memory access to read from regfile or memory
 //
 always_ff @(posedge clk) begin
   instr_2 <= instr;
@@ -39,7 +42,7 @@ always_ff @(posedge clk) begin
 end
 
 //
-// Stage 2: Write to regfile or memory
+// Stage 2: Register the write command to regfile or memory (data is registered at same time in dache and regfile modules)
 //
 always_ff @(posedge clk) begin
   if (instr_2.valid) begin
@@ -47,10 +50,8 @@ always_ff @(posedge clk) begin
     cache_we    <= !instr_2.is_load;
     if (instr_2.is_load) begin
       regfile_write_addr  <= instr_2.regfile_reg; // TODO: add thread here
-      regfile_dat_w       <= cache_dat_r;
     end else begin
       cache_write_addr  <= {instr_2.cache_slot, instr_2.cache_addr};
-      cache_dat_w       <= regfile_dat_r;
     end
   end
 end

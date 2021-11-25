@@ -81,7 +81,10 @@ always_ff @(posedge clk) begin
                     float   <= fp16(instr.dat);
                     addr    <= instr.raw_instr_data.main_mem_addr;
                 end else begin
-                    cache_write_port[39:22]    <= cherry_float(16'd1337); // TODO actually get this float from DMA
+                    // https://evanw.github.io/float-toy/
+                    // 16'h5248 for 50.25
+                    // 16'hD248 for -50.25
+                    cache_write_port[39:22]    <= cherry_float(16'hD248);// TODO actually get this float from DMA
                 end
             end         
         end

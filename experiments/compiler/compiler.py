@@ -12,10 +12,11 @@ APU_LIMIT = 16
 loop_variables = ['i', 'j', 'k', 'l', 'm', 'n', 'o', 'p']
 
 class Slot(Enum):
-  SHARED_STRIDED = 1 # Shared across the cores. Used for storing model.parameters(). Strided
+  PRIVATE_TILE_ADDRESSABLE_0 = 0 # Private to each core. Addressable by SZxSZ tile. Non strided.
+  PRIVATE_TILE_ADDRESSABLE_1 = 1 # Private to each core. Addressable by SZxSZ tile. Non strided.
   SINGLE_TILE = 2 # Holds just one tile.
-  PRIVATE_TILE_ADDRESSABLE_0 = 3 # Private to each core. Addressable by SZxSZ tile. Non strided.
-  PRIVATE_TILE_ADDRESSABLE_1 = 4 # Private to each core. Addressable by SZxSZ tile. Non strided.
+  SHARED_STRIDED = 3 # Shared across the cores. Used for storing model.parameters(). Strided
+  
 
 class DeviceVersion(Enum):
     SMALL_CHERRY_ONE = "small_cherry_one"
@@ -45,10 +46,10 @@ size_for_version = {
 CURRENT_DEVICE_VERSION = DeviceVersion.SMALL_CHERRY_ONE
 SZ = size_for_version[CURRENT_DEVICE_VERSION]
 class Reg(Enum):
-    MATMUL_INPUT = 1
-    MATMUL_WEIGHTS = 2
-    MATMUL_OUTPUT = 3
-    MATMUL_ACC = 4
+    MATMUL_INPUT = 0
+    MATMUL_WEIGHTS = 1
+    MATMUL_OUTPUT = 2
+    MATMUL_ACC = 3
 
 # ==== Compiler state ====
 

@@ -4,21 +4,47 @@ module dcache (
   input freeze,
   // TODO: Support regfile bus
 
-  // DMA Instructions
-  input   dma_stage_1_instr  dma_read_port_in,
-  output  dma_stage_2_instr  dma_read_port_out,
-  input   dma_stage_3_instr  dma_write_port
+  // Regfile Instructions (cisa_load, cisa_store)
+  input   regfile_instruction   cisa_load_instr_stage_1,
+  output  regfile_instruction   cisa_load_instr_stage_2,
+  output  reg[17:0]             cisa_load_dat_stage_2,
+  input   regfile_instruction   cisa_store_instr_stage_2,
+  input   wire[17:0]            cisa_store_dat_stage_2,
+
+  // DMA Instructions (cisa_mem_read, cisa_mem_write)
+  input   dma_stage_1_instr     dma_read_port_in,
+  output  dma_stage_2_instr     dma_read_port_out,
+  input   dma_stage_3_instr     dma_write_port
 );
 
 reg [17:0] single_tile_slot;
 
 localparam SLOT_SINGLE_TILE = 2'd2;
 
-always_ff @(posedge clk) begin
-  //
-  // TODO: Memory Instructions/Regfile accessing its ports
-  //
+always_ff @(posedge clk) begin  
   if (!freeze) begin
+    //
+    // Cisa Load Instruction Uses A Read Port
+    //
+    cisa_load_instr_stage_2 <= cisa_load_instr_stage_1;
+    if (cisa_load_instr_stage_1.valid && cisa_load_instr_stage_1.is_load) begin
+      case (cisa_load_instr_stage_1.cache_slot)
+        SLOT_SINGLE_TILE : begin
+          cisa_load_dat_stage_2 <= single_tile_slot;
+        end
+      endcase
+    end
+
+    //
+    // Cisa Store Instruction Uses A Write Port
+    //
+    if (cisa_store_instr_stage_2.valid && !cisa_store_instr_stage_2.is_load) begin
+      case (cisa_store_instr_stage_2.cache_slot)
+        SLOT_SINGLE_TILE : begin
+          single_tile_slot <= cisa_store_dat_stage_2;// + 3'b100;
+        end
+      endcase
+    end
       
     //
     // DMA Accessing its ports
@@ -42,7 +68,12 @@ always_ff @(posedge clk) begin
     end
   end
 
-  if (reset) dma_read_port_out <= 0;
+  if (reset) begin
+    cisa_load_dat_stage_2   <= 0;
+    cisa_load_instr_stage_2 <= 0;
+    dma_read_port_out <= 14'd0;
+    single_tile_slot <= 0;
+  end
 end
 endmodule
 

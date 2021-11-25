@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 # This script has the superscalar algorithm we will implement in hardware
 # I wonder if it makes sense to have two possible superscalar widths. I can't think of any real use case but a single bit could allow user to swap kernels between superscalar width 4 and width 16
 
@@ -14,8 +15,8 @@ def get_type(instr):
     return "memory" if instr == "load" or instr == "store" else "processing"
 
 latency = {
-    "memory": 4,
-    "processing": 7
+    "memory": 3,
+    "processing": 6
 }
 
 prevInstrType = "memory"
@@ -72,3 +73,4 @@ print(f"{bold('Memory utilization:'):<35} {memory_q_used/instructions_used:>25.2
 print(f"{bold('Processing utilization:'):<35} {processing_q_used/instructions_used:>25.2%}")
 print(f"{bold('Instructions per Cycle:'):<35} {(memory_q_used + processing_q_used) / instructions_used:>25.2f} (technically more with loop instructions)")
 print(f"{bold('Expected workload success:'):<35} {SAD_FACTOR:>25.2f}")
+print(f"{bold('Regfile Size (KB):'):<35} {int(1024 * 4 * SUPERSCALAR_WIDTH * 19 / 8 / 1024):>25,d}")

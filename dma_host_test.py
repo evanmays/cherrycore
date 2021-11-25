@@ -36,7 +36,8 @@ class PinnedDeviceMemorySpace():
                 output_bytes = ser.read(AMOUNT_READ)
                 if len(output_bytes) == 0:
                     continue
-                assert len(output_bytes) == AMOUNT_READ
+                assert len(output_bytes) == AMOUNT_READ, f"read {output_bytes}"
+                # print((output_bytes[BYTES_PER_HEADER:]))
                 output_numpy = np.frombuffer(output_bytes[BYTES_PER_HEADER:], dtype='>f2')
 
                 # Check command has write flag on
@@ -44,7 +45,7 @@ class PinnedDeviceMemorySpace():
                 if write_flag:
                     # Check command has correct memory address
                     write_host_addr = int(output_bytes[0]) & 0x7F
-                    assert write_host_addr == 120
+                    assert write_host_addr == 120, f"received {write_host_addr}"
                     # Check float value
                     self.pinned_mem[write_host_addr:write_host_addr+SZ*SZ] = output_numpy
                 else:

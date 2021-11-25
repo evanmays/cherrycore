@@ -2,3 +2,4 @@ numpy
 pyelftools==0.27
 tqdm
 pyserial
+torch

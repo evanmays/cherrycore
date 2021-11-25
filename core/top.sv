@@ -17,12 +17,19 @@ dma_stage_2_instr   dma_stage_2_execute;
 dma_stage_3_instr   dma_stage_3_dcache_write;
 
 wire          dma_busy;
+regfile_instruction cache_instr_stage_1, cache_load_instr_stage_2, cache_store_instr_stage_2;
+arithmetic_instruction          math_instr;
+always @(posedge clk) begin
+  cache_store_instr_stage_2 <= sw_0 ? 0 : cache_instr_stage_1; //support freeze
+end
 wire q_re;
 assign q_re = !queue_empty & !freeze; // do we lose data?
 fake_queue queue (
 .clk(clk),
 .reset(sw_0),
 .dma_instr(dma_stage_1_dcache_read),
+.cache_instr(cache_instr_stage_1),
+.arithmetic_instr(math_instr),
 .empty(queue_empty),
 .re(q_re)
 );
@@ -43,13 +50,48 @@ dma_uart dma (
 
 );
 
+wire [17:0] cache_load_dat_stage_2, cache_store_dat_stage_2;
 dcache dcache (
 .clk(clk),
-.dma_read_port_in   (dma_stage_1_dcache_read),
-.dma_read_port_out  (dma_stage_2_execute),
-.dma_write_port     (dma_stage_3_dcache_write),
+.cisa_load_instr_stage_1  (cache_instr_stage_1),
+.cisa_load_instr_stage_2  (cache_load_instr_stage_2),
+.cisa_load_dat_stage_2    (cache_load_dat_stage_2),
+.cisa_store_instr_stage_2 (cache_store_instr_stage_2),
+.cisa_store_dat_stage_2   (cache_store_dat_stage_2),
+.dma_read_port_in         (dma_stage_1_dcache_read),
+.dma_read_port_out        (dma_stage_2_execute),
+.dma_write_port           (dma_stage_3_dcache_write),
 .reset(sw_0),
 .freeze(freeze)
 );
 
+wire [1:0] processing_read_addr_regfile, processing_write_addr_regfile;
+wire [17:0] processing_regfile_dat_r, processing_regfile_dat_w;
+wire processing_regfile_we;
+regfile #(.SUPERSCALAR_WIDTH(1), .REG_WIDTH(18)) regfile(
+.clk(clk),
+.reset(sw_0),
+.port_a_read_addr(processing_read_addr_regfile),
+.port_a_out(processing_regfile_dat_r),
+.port_c_we(processing_regfile_we), // .port_c_we(1'd1),
+.port_c_write_addr(processing_write_addr_regfile),//.port_c_write_addr(4'd0),
+.port_c_in(processing_regfile_dat_w), // .port_c_in(18'd150),
+.port_b_read_addr(cache_instr_stage_1.regfile_reg),
+.port_b_out(cache_store_dat_stage_2),
+.port_d_we(cache_load_instr_stage_2.valid && cache_load_instr_stage_2.is_load), // fun fact: if you make a typo and instead type cache_load_instr_stage_2.is_load.valid the compiler wont say anything!!!
+.port_d_write_addr(cache_load_instr_stage_2.regfile_reg),
+.port_d_in(cache_load_dat_stage_2),
+.freeze(freeze)
+);
+
+math_pipeline processing_pipeline(
+.clk(clk),
+.reset(sw_0),
+.instr(math_instr),
+.regfile_read_addr(processing_read_addr_regfile),
+.stage_2_dat(processing_regfile_dat_r),
+.regfile_write_addr(processing_write_addr_regfile),
+.regfile_dat_w(processing_regfile_dat_w),
+.regfile_we(processing_regfile_we)
+);
 endmodule
