@@ -15,7 +15,7 @@ BYTES_PER_BODY = SZ * SZ * BYTES_PER_FLOAT
 class PinnedDeviceMemorySpace():
     def __init__(self):
         self.pinned_mem = np.zeros((128,), dtype=np.float16)
-        self.pinned_mem[120] = 15.0
+        self.pinned_mem[120] = -15.0
         max_attempts = int(4e3)
         success = False
         with serial.Serial(port, timeout=4,baudrate=4800) as ser:
@@ -23,7 +23,7 @@ class PinnedDeviceMemorySpace():
             for _ in range(max_attempts):
                 # print(_)
                 try:
-                    if len(ser.read(AMOUNT_READ)) == 0:
+                    if len(ser.read(100)) == 0:
                         success = True
                         break
                 except:
