@@ -1,5 +1,6 @@
 module math_pipeline(
   input                           clk,
+  input                           freeze,
   input                           reset,
   input   arithmetic_instruction  instr,
 
@@ -20,32 +21,33 @@ reg [4:0] instr_1;
 reg [17:0] stage_3_dat;
 
 always @(posedge clk) begin
-  //
-  // Stage 1: Read register
-  //
-  instr_1 <= instr;
-  if (instr.valid) regfile_read_addr <= instr.reg_in; // TODO: add thread here
+  if (!freeze) begin
+    //
+    // Stage 1: Read register
+    //
+    instr_1 <= instr;
+    if (instr.valid) regfile_read_addr <= instr.reg_in; // TODO: add thread here
 
-  // wait
-  instr_2 <= instr_1;
+    // wait
+    instr_2 <= instr_1;
 
 
 
-  //
-  // Stage 2: Execute
-  //
-  instr_3 <= instr_2;
-  if (instr_2.valid) begin
-    stage_3_dat <= relu(stage_2_dat); // 18'd1500;//
+    //
+    // Stage 2: Execute
+    //
+    instr_3 <= instr_2;
+    if (instr_2.valid) begin
+      stage_3_dat <= relu(stage_2_dat); // 18'd1500;//
+    end
+
+    //
+    // Stage 3: Writeback
+    //
+    regfile_we <= instr_3.valid;
+    regfile_dat_w <= stage_3_dat;
+    regfile_write_addr <= instr_3.reg_out;
   end
-
-  //
-  // Stage 3: Writeback
-  //
-  regfile_we <= instr_3.valid;
-  regfile_dat_w <= stage_3_dat;
-  regfile_write_addr <= instr_3.reg_out;
-
   if (reset) begin
     regfile_read_addr <= 0;
     regfile_write_addr <= 0;

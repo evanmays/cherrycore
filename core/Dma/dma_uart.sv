@@ -1,3 +1,4 @@
+// when in doubt, play with this toy https://evanw.github.io/float-toy/
 function [15:0] fp16;
 	input [17:0] cherry_float;
 	begin
@@ -36,8 +37,18 @@ output  wire        uart_txd  // UART transmit pin.
 //     set busy to false
 //
 // def read_cherry_float(f, addr):
-//     # implement
-//     # set dma_dat_r and sram_mem_addr so we can edit sram from this module
+//     send read addr command
+//     while True:
+//         if not uart_tx_busy:
+//             break
+//     while True:
+//          if uart_rx_valid:
+//              store most signifcant byte
+//              break
+//     while True:
+//          if uart_rx_valid:
+//              set cache_write_port with original instruction and data as cherry_float( {MSB, LSB} )
+//              break
 //
 // def write_cherry_float(f, addr):
 //     send write at addr command
@@ -53,7 +64,10 @@ output  wire        uart_txd  // UART transmit pin.
 //         if not uart_tx_busy:
 //             break
 
-enum {  IDLE,
+enum {  // start
+        IDLE,
+
+        // write_cherry_float()
         SEND_WRITE_COMMAND_0,
         SEND_WRITE_COMMAND_1,
         SEND_WRITE_COMMAND_2,
@@ -63,31 +77,83 @@ enum {  IDLE,
         SEND_LSB_0,
         SEND_LSB_1,
         SEND_LSB_2,
+
+        // read_cherry_float()
+        SEND_READ_COMMAND_0,
+        SEND_READ_COMMAND_1,
+        SEND_READ_COMMAND_2,
+        RECV_MSB_0,
+        RECV_LSB_0,
+
+        // end
         FINISH
     } S;
+
+// cisa_mem_write
 reg [7:0]   uart_tx_data;
 reg         uart_tx_en;
 wire        uart_tx_busy;
 reg [15:0]  float;
+
+// cisa_mem_read
+reg [7:0]           recv_msb;
+dma_stage_2_instr   temp_instr;
+wire                uart_rx_valid;
+wire [7:0]          uart_rx_data;
+
+// cisa_mem_*
 reg [6:0]  addr;
 always_ff @(posedge clk) begin
     case (S)
         IDLE: begin
-            cache_write_port <= instr; //TODO: since yosys language built in wont let me cache_write_port.raw_instr_data im just overrwriting the entire thing. figure out how to fix
+            cache_write_port <= 0; // for mem_read // just override write enable to save power // reset here instead of finish state because when dma in finish state dcache still frozen. if you reset in finish state, dcache never knew the instruction existed.
             if (instr.raw_instr_data.valid) begin
+                busy    <= 1;
+                addr    <= instr.raw_instr_data.main_mem_addr;
                 if (instr.raw_instr_data.mem_we) begin
-                    busy    <= 1;
                     S       <= SEND_WRITE_COMMAND_0;
                     float   <= fp16(instr.dat);
-                    addr    <= instr.raw_instr_data.main_mem_addr;
                 end else begin
-                    // https://evanw.github.io/float-toy/
                     // 16'h5248 for 50.25
                     // 16'hD248 for -50.25
-                    cache_write_port[39:22]    <= cherry_float(16'hD248);// TODO actually get this float from DMA
+                    S       <= SEND_READ_COMMAND_0;
+                    temp_instr <= instr;
                 end
             end         
         end
+        //
+        // def read_cherry_float(f, addr):
+        //
+        SEND_READ_COMMAND_0:  begin
+            uart_tx_en      <= 1;
+            uart_tx_data    <= {1'b0, addr};
+            S               <= SEND_READ_COMMAND_1;
+        end
+        SEND_READ_COMMAND_1: begin
+            uart_tx_en <= 0;
+            S <= SEND_READ_COMMAND_2;
+        end
+        SEND_READ_COMMAND_2: begin
+            if (!uart_tx_busy) begin
+                S <= RECV_MSB_0;
+            end
+        end
+        RECV_MSB_0: begin
+            if (uart_rx_valid) begin
+                recv_msb <= uart_rx_data;
+                S <= RECV_LSB_0;
+            end
+        end
+        RECV_LSB_0: begin
+            if (uart_rx_valid) begin
+                cache_write_port            <= temp_instr; //TODO: since yosys language built in wont let me cache_write_port.raw_instr_data im just overrwriting the entire thing. figure out how to fix
+                cache_write_port[39:22]     <= cherry_float({recv_msb, uart_rx_data});// 16'hD248
+                S <= FINISH;
+           end
+        end
+        //
+        // def write_cherry_float(f, addr):
+        //
         SEND_WRITE_COMMAND_0:  begin
             uart_tx_en      <= 1;
             uart_tx_data    <= {1'b1, addr};
@@ -130,6 +196,8 @@ always_ff @(posedge clk) begin
                 S <= FINISH;
             end
         end
+
+        // end
         FINISH: begin
             busy    <= 0;
             S       <= IDLE;
@@ -141,6 +209,8 @@ always_ff @(posedge clk) begin
         uart_tx_en      <= 0;
         uart_tx_data    <= 0;
         cache_write_port  <= 0;
+        recv_msb        <= 0;
+        temp_instr      <= 0;
     end
 end
 
@@ -156,6 +226,19 @@ uart_tx #(
 .uart_tx_en   (uart_tx_en   ),
 .uart_tx_busy (uart_tx_busy ),
 .uart_tx_data (uart_tx_data ) 
+);
+
+uart_rx #(
+.BIT_RATE(4800),
+.PAYLOAD_BITS(8),
+.CLK_HZ  (CLK_HZ  )
+) i_uart_rx(
+.clk          (clk          ),
+.resetn       (!reset       ),
+.uart_rxd     (uart_rxd     ),
+.uart_rx_en   (1'b1         ),
+.uart_rx_valid(uart_rx_valid ),
+.uart_rx_data (uart_rx_data)
 );
 
 

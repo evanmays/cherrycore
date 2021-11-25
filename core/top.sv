@@ -20,18 +20,22 @@ wire          dma_busy;
 regfile_instruction cache_instr_stage_1, cache_load_instr_stage_2, cache_store_instr_stage_2;
 arithmetic_instruction          math_instr;
 always @(posedge clk) begin
-  cache_store_instr_stage_2 <= sw_0 ? 0 : cache_instr_stage_1; //support freeze
+  if (sw_0) begin
+    cache_store_instr_stage_2 <= 0;
+  end else if (!freeze) begin
+    cache_store_instr_stage_2 <= cache_instr_stage_1;
+  end
 end
 wire q_re;
 assign q_re = !queue_empty & !freeze; // do we lose data?
 fake_queue queue (
 .clk(clk),
 .reset(sw_0),
+.re(q_re),
 .dma_instr(dma_stage_1_dcache_read),
 .cache_instr(cache_instr_stage_1),
 .arithmetic_instr(math_instr),
-.empty(queue_empty),
-.re(q_re)
+.empty(queue_empty)
 );
 
 dma_uart dma (
@@ -53,6 +57,7 @@ dma_uart dma (
 wire [17:0] cache_load_dat_stage_2, cache_store_dat_stage_2;
 dcache dcache (
 .clk(clk),
+.freeze(freeze),
 .cisa_load_instr_stage_1  (cache_instr_stage_1),
 .cisa_load_instr_stage_2  (cache_load_instr_stage_2),
 .cisa_load_dat_stage_2    (cache_load_dat_stage_2),
@@ -61,8 +66,7 @@ dcache dcache (
 .dma_read_port_in         (dma_stage_1_dcache_read),
 .dma_read_port_out        (dma_stage_2_execute),
 .dma_write_port           (dma_stage_3_dcache_write),
-.reset(sw_0),
-.freeze(freeze)
+.reset(sw_0)
 );
 
 wire [1:0] processing_read_addr_regfile, processing_write_addr_regfile;
@@ -71,6 +75,7 @@ wire processing_regfile_we;
 regfile #(.SUPERSCALAR_WIDTH(1), .REG_WIDTH(18)) regfile(
 .clk(clk),
 .reset(sw_0),
+.freeze(freeze),
 .port_a_read_addr(processing_read_addr_regfile),
 .port_a_out(processing_regfile_dat_r),
 .port_c_we(processing_regfile_we), // .port_c_we(1'd1),
@@ -80,13 +85,13 @@ regfile #(.SUPERSCALAR_WIDTH(1), .REG_WIDTH(18)) regfile(
 .port_b_out(cache_store_dat_stage_2),
 .port_d_we(cache_load_instr_stage_2.valid && cache_load_instr_stage_2.is_load), // fun fact: if you make a typo and instead type cache_load_instr_stage_2.is_load.valid the compiler wont say anything!!!
 .port_d_write_addr(cache_load_instr_stage_2.regfile_reg),
-.port_d_in(cache_load_dat_stage_2),
-.freeze(freeze)
+.port_d_in(cache_load_dat_stage_2)
 );
 
 math_pipeline processing_pipeline(
 .clk(clk),
 .reset(sw_0),
+.freeze(freeze),
 .instr(math_instr),
 .regfile_read_addr(processing_read_addr_regfile),
 .stage_2_dat(processing_regfile_dat_r),

@@ -2,7 +2,6 @@ module dcache (
   input clk,
   input reset,
   input freeze,
-  // TODO: Support regfile bus
 
   // Regfile Instructions (cisa_load, cisa_store)
   input   regfile_instruction   cisa_load_instr_stage_1,
