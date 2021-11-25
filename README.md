@@ -2,20 +2,25 @@
 
 ![Indicator of if Unit Tests workflow are passing](https://github.com/evanmays/cherrycore/actions/workflows/SVUT.yml/badge.svg)
 
-A deep learning training core. Start tiny with just a control unit, memory, and ReLU. Then, get bigger and better. Every version should work on real hardware.
+A deep learning training core. Start tiny with just a control unit, memory, and ReLU. Then, get bigger and better. Every version should work on real hardware. The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
 
 ISA in Cherry ISA.pdf
 Superscalar notes below
 
-[How faster than 3090](https://docs.google.com/presentation/d/1JEysqlI_p8qhONiCQVEdrohAqypjY5eJTStA6SZking/edit#slide=id.p)
+Same cache bandwidth as a 3090 but due to the larger tile size we have 4x the arithmetic intensity on cache transfers. So, once data is on chip, the programs complete in a quarter the time.
 
-![Diagram of Cherry Core architecture](https://github.com/evanmays/cherrycore/blob/master/architecture.png?raw=true)
+There are 3 functional units all pipelined individually so they may in total complete 3 instructions per cycle. The first functional unit deals with cisa_mem_write and cisa_mem_read instructions. It's transfering data between device memory and device cache. The second functional unit supports cisa_load and cisa_store. It transfers data between device cache and the regfile. The third functional unit deals with all of our arithmetic insturctions. There are your cisa_matmul, cisa_relu, etc.
+
+To feed the three pipelines 3 instructions per cycle, we have an instruction queue. On the other end of that queue is an out of order superscalar control unit. This unit is much simpler than most other superscalars. It utilizes the knowledge that ML programs are all loops. The programmer can replace a python range() function with cherry_range() and our superscalar unit will then treat each loop body as a thread allowing it to parallelize things. Since the programs aren't turing complete, we can make a perfect branch predictor and prefetch all cisa_mem_read instructions. There's also a program cache that can hold all the programs a forward and back pass would need (a few KB). And a program exection queue which allows the host device to schedule programs.
+
+4 slots of memory, each one has different access pattern support. Need to find a balance of slots that do 0D, 1D, 3D and ND striding. The trick with ND striding will be to signifantly reduce cache bandwidth. So, maybe a programer can load a 32x32 tile (1024 elements) with 1D striding. But, if they want 3D striding then they can only load a 3x3x3 cube (27 elements). Notice we went from 1024 elements to 27. But if you had kept 1D striding you probably woudn't be able to get max utilization on the 1024 elements anyway. Supporting arithmetic on cubes instead of tiles should be cheap although we can probably only afford 1 or 2 cube sizes options. Need more example conv2d programs to pick exactly what we want to support here. Perhaps on cherry 3 one slot should be shared across cores and broadcast its reads to all cores.
+
 
 # Cherry 1 Stages
 
-1. Tiny Cherry 1, does 1 relu per cycle (50 MFLOPs) in simulator and on physical a7-100t. It's just scaffolding so rest of parts can be worked on independently.
+1. Tiny Cherry 1, does 1 relu per cycle (50 MFLOPs) in simulator and on physical a7-100t. It's just scaffolding so rest of work can be done in parallel.
 2. Small Cherry 1, does 6.4 GFLOPs with support for entire ISA in simulator and on physical a7-100t
-3. Big Cherry 1, works on physical big $7500 fpga
+3. Big Cherry 1, works on physical $7500 Alveo u250 fpga (or equivalent)
 
 Original Cherry 2 and 3 master plan [written by geohot here](https://github.com/geohot/tinygrad/tree/master/accel/cherry). But I have some tweaks
 
@@ -122,16 +127,12 @@ They can be pipelined. Ideal latency is 3 or less cycles. Every doubling of late
 
 # Notes on Memory system
 
-To see what this is like from a users perspective who is writing cherry programs. View [memory model doc](memory_model.md)
+Programmer manually cache. They are aided by our runtime telling them when a matrix is in cache already or not. They write two programs. One for if a tensor is in cache, another for if the tensor is not in cache.
 
 Strided Memory
 8 million elements (20MB) = 23-bit address path
 
-We want to support a load/store instruction into 32x32 matrix register (2432 bytes) like this:
-* Would be R-Type with rs1 and rs2 (64-bit)
-* rs1 contains the 23-bit base address, plus two masks in the upper bytes (0 is no mask)
-* rs2 contains two 24-bit strides for x and y. Several of these bits aren't connected
-* "rd" is the extension register to load into / store from
+We want to support a load/store instruction into 32x32 matrix register (2432 bytes). The programmer can access 4 of these registers.
 
 Use some hash function on the addresses to avoid "bank conflicts", can upper bound to probabilisticly 1.2 cycles per matrix load with stride x as 0 or 1.
 
@@ -245,7 +246,7 @@ def matmul_three(A, B, C):
 
 # DMA Notes
 
-DMA is driven by CPU. this code should be straight forward. Simple malloc algorithm determines where we have free space and what to evict. Then check if any active kernels are using the memory space, if not, do memory operations on the BRAMs. On small cherry 1 (mini edition), memory has 5 ports of width 18*4. 4 ports are for running kernels, 5th port is for DMA. 4 ports have priority. 5th port stalls a bunch. Perhaps reordering can happen on the 5th port to prevent stalls. Software side won't know exact timing so reordering must happen in hardware. Simple algorithm, pull 2 memory dma ops at a time, do the first one if you can, if doesn't work, try second one, if doesn't work stall. This should get us to maybe 5% stall rate. Can increase decode width to 4 for ~0% stall rate. I'm just guestimating on this percent but it feels accurate.
+On small cherry 1 (mini edition), memory has 5 ports of width 18*4. 4 ports are for running kernels, 5th port is for DMA. 4 ports have priority. 5th port stalls a bunch. The 5th port can use reorder buffer to prevent stalls. Reorder buffer length 2 with guaranteed reorder by no more than 1 position. Simple algorithm: Use a single bit to take note on when a dma op has been ignored for one cycle or not. This should get us to maybe 5% stall rate. Can increase decode width to 4 for ~0% stall rate. I'm just guestimating on this percent but it feels accurate.
 
 Small Cherry 1
 `100e6` bits per second @ 50MHz is 2 bits per cycle. Can't even use full 5th port. Must have a hardware generated mask
@@ -258,4 +259,3 @@ Cherry 2
 
 TODO:
 * Can we add this 5th port? Does a mask work? Can we keep the fifth port and other DMA stuff under 5% LUT usage?
-* Figure out how to make DMA work both in verilog and python. Ideally, when a user does tensor_a.to_gpu() this actually just moves the tensor to pinned memory on host computer. Software malloc manages SRAM caching by DMAing between pinned host memory and cherry sram.
