@@ -33,6 +33,11 @@ class PinnedDeviceMemorySpace():
         print("Initialized host memory. You may now start running chip (push on-device switch down)")
     
     def start(self):
+        """
+        This causes host computer to listen and
+        respond to cisa_mem_* instructions from the cherry device.
+        It infinite loops.
+        """
         with serial.Serial(port, timeout=4,baudrate=4800) as ser:
             while True:
                 header_bytes = ser.read(BYTES_PER_HEADER)
@@ -59,7 +64,7 @@ class PinnedDeviceMemorySpace():
                         byte = bytes_dat[i:i+1] # non sliced access isn't what you expect
                         time.sleep(0.1) # lol
                         ser.write(byte)
-    # TODO: support tinygrad creating a new device buffer and moving data to pinned_mem (t.to_gpu())
+    # TODO: support tinygrad creating a new device buffer and moving data to pinned_mem (t.to_gpu()). need to lock memory locations to prevent tinygrad and cherry device from reading while someone else is writing?
     # TODO: support tiny grad moving data from pinned_mem to "cpu" land (t.to_cpu())
 
 PinnedDeviceMemorySpace().start()
