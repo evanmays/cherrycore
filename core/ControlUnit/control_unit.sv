@@ -1,3 +1,5 @@
+// Superscalar Control Unit. It's a slow state machine, but it pushes about 9 IPC to instruction queue. Other end of queue pops at most 3 IPC.
+// Loop instructions are completely retired by the control unit!
 // pull from program execution queue
 // load ro_data from program header cache
 // while True:
