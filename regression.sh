@@ -28,7 +28,7 @@ fi
 
 # Regfile Test Suite
 cd core/Memory
-"svutRun" -test "regfile_unit_test.sv" -define "MYDEF1=5;MYDEF2" # | tee log
+"svutRun" -test "regfile_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
 rm icarus.out log
 cd ../../
 ret=$?
@@ -42,7 +42,7 @@ fi
 
 # Dcache Test Suite
 cd core/Memory
-"svutRun" -test "dcache_unit_test.sv" -define "MYDEF1=5;MYDEF2"# | tee log
+"svutRun" -test "dcache_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
 rm icarus.out log
 cd ../../
 ret=$?
@@ -56,7 +56,7 @@ fi
 
 # Low performance DMA UART Test Suite
 cd core/Dma
-"svutRun" -test "dma_uart_unit_test.sv" -define "MYDEF1=5;MYDEF2"# | tee log
+"svutRun" -test "dma_uart_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
 rm icarus.out log
 cd ../../
 ret=$?
