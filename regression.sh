@@ -12,33 +12,6 @@ set -ex
 # pipe fails if first command fails. Else is always successful
 set -o pipefail
 
-
-# # Single loop Test Suite
-# cd core/ControlUnit
-# "svutRun" -test "single_loop_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
-# cd ../../
-# ret=$?
-
-# if [[ $ret != 0 ]]; then
-#     echo "Execution failed but should not..."
-#     exit 1
-# else
-#     echo "OK testsuite execution completed successfully ^^"
-# fi
-
-# # APU Test Suite
-# cd core/ControlUnit
-# "svutRun" -test "apu_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
-# cd ../../
-# ret=$?
-
-# if [[ $ret != 0 ]]; then
-#     echo "Execution failed but should not..."
-#     exit 1
-# else
-#     echo "OK testsuite execution completed successfully ^^"
-# fi
-
 # Program Cache Test Suite
 cd core/ControlUnit
 "svutRun" -test "ro_data_mem_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
@@ -53,23 +26,9 @@ else
     echo "OK testsuite execution completed successfully ^^"
 fi
 
-# Control unit Test Suite
-cd core/ControlUnit
-"svutRun" -test "control_unit_test.sv" -define "MYDEF1=5;MYDEF2" # | tee log
-rm icarus.out log
-cd ../../
-ret=$?
-
-if [[ $ret != 0 ]]; then
-    echo "Execution failed but should not..."
-    exit 1
-else
-    echo "OK testsuite execution completed successfully ^^"
-fi
-
 # Regfile Test Suite
 cd core/Memory
-"svutRun" -test "regfile_unit_test.sv" -define "MYDEF1=5;MYDEF2"# | tee log
+"svutRun" -test "regfile_unit_test.sv" -define "MYDEF1=5;MYDEF2" # | tee log
 rm icarus.out log
 cd ../../
 ret=$?
