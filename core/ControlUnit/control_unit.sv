@@ -1,140 +1,166 @@
-// Low performance single stage CPU. Generates instructions for the actual cherry core.
-// When combined with a BRAM kcache. Reading from BRAM and doing all of cpu module's combinatorial logic gets clock rate almost 60MHz.
-// 2903 LUT total. 998 for APU. 1821 for Loop controller. Each individual loop is about 100 LUT.
-// It will 3x when we go to big cherry 1. On small its 4%, on big it's 1%.
-module cpu#(parameter LOG_KCACHE_SIZE=11, MEMORY_ADDRESS_BITS=15, LOG_APU_CNT=3, SUPERSCALAR_LOG_WIDTH=2, LOOP_LOG_CNT=3)(
-  input clk,
-  input reset,
-  input [16:0] kernel_start_address,
-  input [0:17] raw_instruction,
-  input raw_instruction_fetch_successful,
-  input queue_almost_full,
-  input apu_formulas apu_formulas_ro_data,
-  input wire [0:BITS*2*8-1] loop_ro_data,
-  output queue_memory_instruction queue_memory_instructions,
-  output decoded_processing_instruction queue_processing_instructions,
-  output wire [SUPERSCALAR_LOG_WIDTH-1:0] copy_count,
-  output reg memory_instruction_we, processing_instruction_we,
-  output reg [LOG_KCACHE_SIZE-1:0] pc, // address of instruction we want to read next
-  output reg error
+// pull from program execution queue
+// load ro_data from program header cache
+// while True:
+//   decode instruction from program instruction cache at pc
+//   if loop instruction
+//     if start loop instruction
+//        create new loop
+//     else
+//        # end loop instruction
+// 	      update loop variable
+// 	   update APU
+// 	   continue
+// 	 elif dma instruction
+// 		 initiate prefetch
+// 	 calculate instruction queue copy amount and put in queue (also get the apu values if needed)
+//   update pc and break loop if pc > program_instr_count
+// notify host computer of completion
+module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
+  input               clk,
+  input               reset,
+  input       [0:15]  raw_instruction,
+  output reg  [15:0]  pc
 );
-assign queue_memory_instructions = {apu_output_wire, memory_instruction.control};
-assign queue_processing_instructions = processing_instruction;
-parameter SUPERSCALAR_WIDTH = (1 << SUPERSCALAR_LOG_WIDTH);
-parameter LOOP_CNT = (1 << LOOP_LOG_CNT);
-parameter APU_CNT = (1 << LOG_APU_CNT);
-enum {STATE_START, STATE_EXECUTE, STATE_STALL, STATE_FINISH} state;
-wire error_wire;
+enum {IDLE, PREPARE_PROGRAM, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM} S;
+e_instr_type instr_type;
 
-// Loop Controller
-reg [MEMORY_ADDRESS_BITS - 1:0] new_loop_iteration_count;
-reg new_loop_is_inner_independent_loop;
-reg should_create_new_loop;
-reg did_start_next_loop_iteration;
-reg did_finish_loop;
-wire is_loop_done;
-wire loop_reset, loop_enable, loop_is_start_loop;
-assign loop_reset = state == STATE_START;
-assign loop_enable = instruction_type == INSTR_TYPE_LOOP && state != STATE_STALL;
-assign loop_is_start_loop = loop_instruction.loop_instr_type !== LOOP_TYPE_JUMP_OR_END;
-wire [LOOP_LOG_CNT-1:0] current_loop_depth;
-wire [BITS-1:0] apu_di;
-loop loop (
-  .clk,
-  .reset(loop_reset), // clear all state
-  .enable(loop_enable),
-  .new_loop(loop_controller_new_loop_wire),
-  .end_loop_or_jump(loop_controller_end_loop_wire),
-  .is_start_loop(loop_is_start_loop),
-  .current_loop_done(is_loop_done),
-  .copy_count(copy_count), // instead of 0, 1, 2, 3. it's 1, 2, 3, 4
-  .current_loop_depth_out(current_loop_depth),
-  .current_loop_cur_di(apu_di)
-);
+// Info about current program
+reg [15:0]  program_end_pc;
+reg [6:0]   program_header_cache_addr;
+reg [0:24*8-1] loop_ro_data;
 
-loop_controller_new_loop loop_controller_new_loop_wire;
-loop_controller_end_loop loop_controller_end_loop_wire;
-wire loop_mux_independent;
-assign loop_mux_independent = loop_instruction.loop_instr_type == LOOP_TYPE_START_INDEPENDENT ? 1'b1 : 1'b0;
-loopmux #(BITS) loopmux (
-    .addr         (loop_instruction.loop_address),
-    .in           (loop_ro_data),
-    .independent  (loop_mux_independent),
-    .new_loop     (loop_controller_new_loop_wire),
-    .end_loop     (loop_controller_end_loop_wire)
-);
+localparam SUPERSCALAR_WIDTH = (1 << LOG_SUPERSCALAR_WIDTH);
+
+// Loop variables
+localparam LOG_LOOP_CNT = 3;
+localparam LOOP_CNT = (1 << LOG_LOOP_CNT);
+reg signed [LOG_LOOP_CNT:0] loop_depth; // -1 is empty
+reg [LOOP_CNT] [17:0] loop_value;
+reg [LOOP_CNT] [17:0] loop_stack_total_iterations;
+reg [LOOP_CNT] [7:0] loop_stack_jump_amount;
+reg [LOOP_CNT] loop_is_independent;
+wire loop_depth_plus_one = loop_depth + 1;
+reg [7:0] jump_amount;
+wire [17:0] loop_remaining_iterations = loop_stack_total_iterations[loop_depth] - loop_value[loop_depth];
 
 // APU
-
-wire [LOG_APU_CNT-1:0] apu_selector;
-assign apu_selector = memory_instruction.apu;
-apu_output apu_output_wire;
-apu #(BITS, LOOP_LOG_CNT, LOG_APU_CNT) apu(
-    .clk(clk),
-    .reset(loop_reset),
-    .enable(loop_enable),
-    .current_loop_done(is_loop_done),
-    .is_starting_new_loop(loop_is_start_loop),
-    .iteration_count(loop_controller_end_loop_wire.iteration_count),
-    .loop_var(current_loop_depth), 
-    .loop_di(apu_di),
-    .apu_selector(apu_selector),
-    .formulas(apu_formulas_ro_data),
-    .apu_out(apu_output_wire)
-  );
-
-// Decoder
-
-wire decoded_memory_instruction memory_instruction;
-wire decoded_processing_instruction processing_instruction;
-decoded_loop_instruction loop_instruction;
-e_instr_type instruction_type;
-decoder decoder(
-  .raw_instruction(raw_instruction),
-  .memory_instruction(memory_instruction),
-  .processing_instruction(processing_instruction),
-  .loop_instruction(loop_instruction),
-  .instruction_type(instruction_type),
-  .error(error_wire)
-);
-
+parameter LOG_APU_CNT = 3;
+parameter APU_CNT = (1 << LOG_APU_CNT);
+reg [LOG_LOOP_CNT-1:0] apu_in_loop_var; // input set by loop update FSM step
+reg [17:0] apu_in_di; // input set by loop update FSM step
+reg [APU_CNT] [18*9-1:0] apu_linear_formulas; // ro_data: each formula has 8 coefficients and 1 constant
+reg [APU_CNT] [17:0] apu_address_registers; // current data
 
 always @(posedge clk) begin
-  case (state)
-    STATE_START: begin
-      state <= kernel_start_address ? STATE_EXECUTE : STATE_START;
-      pc <= kernel_start_address;
+  case (S)
+    IDLE: begin
+      S <= PREPARE_PROGRAM;
     end
-    STATE_EXECUTE: begin
-      state <= raw_instruction_fetch_successful
-               ? queue_almost_full
-                  ? STATE_STALL
-                  : STATE_EXECUTE
-               : STATE_FINISH; // tell queue to not read
-      pc <= pc + 1
-            - (!is_loop_done
-              && loop_instruction.loop_instr_type == LOOP_TYPE_JUMP_OR_END
-                ? loop_controller_end_loop_wire.jump_amount
-                : 0);
-      memory_instruction_we <= instruction_type == INSTR_TYPE_MEMORY;
-      processing_instruction_we <= instruction_type == INSTR_TYPE_PROCESSING;
+    PREPARE_PROGRAM: begin
+      pc <= 0;
+      program_end_pc <= 10;
+      S <= DECODE;
+      // setup apu_address_registers to constant values
+      // load loop_ro_data <= 0;
     end
-    STATE_STALL: begin
-      state <= queue_almost_full
-                ? STATE_STALL
-                : STATE_EXECUTE;
+    DECODE: begin
+      
+      case (instr_type)
+        INSTR_TYPE_LOOP: S <= loop_instr.is_new_loop ? START_NEW_LOOP : INCREMENT_LOOP;
+        INSTR_TYPE_RAM: S <= INSERT_TO_QUEUE;// INIT_PREFETCH;
+        default: S <= INSERT_TO_QUEUE;
+      endcase
     end
-    STATE_FINISH: begin
-      state <= STATE_START;
+    START_NEW_LOOP: begin
+      loop_value[loop_depth_plus_one] <= 0;
+      loop_depth <= loop_depth_plus_one;
+      loop_is_independent[loop_depth_plus_one] <= loop_instr.is_independent;
+      S <= UPDATE_APU;
+    end
+    INCREMENT_LOOP: begin
+      loop_value[loop_depth]  <= loop_value[loop_depth] + (loop_is_independent[loop_depth] ? (loop_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
+      apu_in_loop_var <= loop_depth;
+      
+      if (loop_remaining_iterations <= SUPERSCALAR_WIDTH) begin
+        apu_in_di <= loop_stack_total_iterations[loop_depth];
+      end else begin
+        apu_in_di                  <=                         (loop_is_independent[loop_depth] ? (loop_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
+        jump_amount <= loop_stack_jump_amount[loop_depth];
+      end
+      S <= UPDATE_APU;
+    end
+    UPDATE_APU: begin
+      for (integer k = 0; k < LOOP_CNT ; k = k + 1) begin // will this synthesize properly? do we need to use macros?
+        apu_address_registers[k] <= apu_in_di * daddr_di(apu_linear_formulas[k], apu_in_loop_var);
+      end
+      S <= UPDATE_PC;
+    end
+    INIT_PREFETCH: begin
+      // currently unsupported
+      S <= INSERT_TO_QUEUE;
+    end
+    INSERT_TO_QUEUE: begin
+      S <= UPDATE_PC;
+    end
+    UPDATE_PC: begin
+      pc <= pc + 1 - jump_amount;
+      jump_amount <= 0;
+      S <= pc >= program_end_pc ? FINISH_PROGRAM
+                                : DECODE;
+    end
+    FINISH_PROGRAM: begin
+      S <= IDLE;
     end
   endcase
   if (reset) begin
-    state <= STATE_START;
-    error <= 0;
-  end else if (error_wire && state != STATE_START) begin
-    error <= 1;
+    pc <= 0;
+    program_end_pc <= 0;
+    loop_ro_data <= 0;
+    program_header_cache_addr <= 0;
+    loop_depth <= -1;
+    loop_value <= 0;
+    loop_stack_jump_amount <= 0;
+    jump_amount <= 0;
+    apu_in_loop_var <= 0;
+    apu_in_di <= 0;
+    apu_linear_formulas <= 0;
+    apu_address_registers <= 0;
+    
   end
-
-  
 end
+
+
+function [17:0] constant;
+	input [18*9-1:0] linear_formula;
+	begin
+		constant = linear_formula[144 +: 18];
+	end
+endfunction
+function [17:0] daddr_di;
+	input [18*9-1:0] linear_formula;
+  input [LOG_LOOP_CNT-1:0] loop_var;
+	begin
+    // check if synthesized right, might need big switch case
+		daddr_di = linear_formula[loop_var*18 +: 18];
+	end
+endfunction
+
+decoded_load_store_instruction ld_st_instr;
+decoded_ram_instruction ram_instr;
+decoded_arithmetic_instruction arith_instr;
+decoded_loop_instruction loop_instr;
+e_instr_type instruction_type;
+decoder decoder(
+// in
+.loop_ro_data(loop_ro_data),
+.raw_instruction(raw_instruction),
+// out
+.ld_st_instr(ld_st_instr),
+.ram_instr(ram_instr),
+.arith_instr(arith_instr),
+.loop_instr(loop_instr),
+.instruction_type(instruction_type)
+);
 endmodule
+
+
