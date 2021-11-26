@@ -27,28 +27,14 @@ Original Cherry 2 and 3 master plan [written by geohot here](https://github.com/
 1. Cherry 2 stays the same. It's just a tapeout of the Big Cherry 1
 2. Cherry 3 is the AI Training Card for your desktop and for real production model training (no GPT-3 fine tuning sorry). It's got half a petaflop peak TF32 performance and high flop utilization. 8 cores instead of 16. 1024 GB/s VRAM instead of 512.
 
-# How to get to working Tiny Cherry 1
+# Status (Tiny Cherry 1)
+Cherry Inference Chip Works on a7100t. Tested on macOS plugged in to a7100t over usb.
 
-To get to a state where we have scaffolding. Just want a chip that supports loop, relu, and sram instructions. With SZ=1. So only operating on a single float at a time.
-
-Just finish these last 4 things
-
-* **Make DMA engine**. Allow it to be driven by host PC. Cherry device sends some kind of ACK message back to host. Needs to access data cache, program cache, and program execution queue (maybe execution queue should be over uart?).
-* **Make instruction queues** that check for hazards on insert. model after `superscalar.py`
-* **Make a floating point ReLU**. Probably 10 lines of verilog. We want a simple processing instruction so we can end to end test without worrying about if this is correct or not. More arithmetic will come later.
-* **Top**. Create `module top_tiny` that wires all the pieces together. Now we can test training on mnist with the relus done on cherry verilator simulator.
-
-# Cherry Inference Chip Works on a7100t
-
-This chip takes in a fp16 over uart, then applies the ReLU function, then sends the fp16 back over uart. We have this working with numpy arrays.
-
-Tested on macOS plugged in to a7100t over usb.
+Current tiny cherry 1 in `core/top.sv` can run a hard coded relu program! It doesn't have a superscalar control unit so it's super low performance. But, it will successfully do a dma read from the host computer (over USB UART), apply ReLU, then send the result back to the host computer. The DMAs are driven by the cherry, the host computer simply waits and listens. You can see this host pc listener in `dma_host_test.py`.
 
 Prerequisites aren't documented but the script that synthesizes, place-n-routes, uploads the bitstream, and runs a test python program is `./test_a7100t_relu.sh`
 
-It does something like 100 ReLUs a second. will be scaffolding for making tiny cherry 1
-
-# Getting Started
+# Contributors Getting Started
 
 ### Prerequisites (MacOS & linux... sry Windows)
 * icarus-verilog 
