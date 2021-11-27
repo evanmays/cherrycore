@@ -6,6 +6,7 @@ typedef enum logic [1:0] {
   INSTR_TYPE_ARITHMETIC   = 2'd2,
   INSTR_TYPE_LOOP         = 2'd3
 } e_instr_type;
+
 typedef enum {LOAD_STORE, RAM, ARITHMETIC} e_instr_queue_instr_type;
 
 typedef struct packed {
