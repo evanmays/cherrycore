@@ -147,21 +147,18 @@ function [17:0] daddr_di;
 	end
 endfunction
 
-decoded_load_store_instruction ld_st_instr;
-decoded_ram_instruction ram_instr;
-decoded_arithmetic_instruction arith_instr;
+// Partial Decoder
+e_instr_type instruction_type = raw_instruction[0:1];
+wire [0:13] arith_instr = raw_instruction[2:15];
+wire [0:6]  ram_instr   = raw_instruction[2:8]; // 1 bit is_write, 6 bit 2 apus
+wire [0:13] ld_st_instr = raw_instruction[2:15]; // 1 bit is_load, 2 bit cache slot, 2 bit register_target, 2 bit height, 2 bit width, 1 bit zero_flag, 1 bit skip_flag, 3 bit apu
 decoded_loop_instruction loop_instr;
-e_instr_type instruction_type;
-decoder decoder(
-// in
-.loop_ro_data(loop_ro_data),
-.raw_instruction(raw_instruction),
-// out
-.ld_st_instr(ld_st_instr),
-.ram_instr(ram_instr),
-.arith_instr(arith_instr),
-.loop_instr(loop_instr),
-.instruction_type(instruction_type)
+loopmux loopmux (
+    .addr         (raw_instruction[4:6]),
+    .in           (loop_ro_data),
+    .independent  (raw_instruction[2]), // for start loop instructions
+    .new_loop     (raw_instruction[3]),
+    .loop_instr   (loop_instr)
 );
 endmodule
 
