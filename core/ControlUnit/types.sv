@@ -5,8 +5,6 @@ parameter INSTR_TYPE_RAM          = 2'd1;
 parameter INSTR_TYPE_ARITHMETIC   = 2'd2;
 parameter INSTR_TYPE_LOOP         = 2'd3;
 
-typedef enum {LOAD_STORE, RAM, ARITHMETIC} e_instr_queue_instr_type;
-
 typedef struct packed {
   reg is_new_loop;
   reg [17:0] iteration_count;

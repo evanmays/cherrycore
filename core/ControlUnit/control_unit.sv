@@ -26,11 +26,13 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   output reg  [15:0]  pc,
 
   // Program (header) ro_data Ports
-  input  wire [4*9*18-1:0] prog_apu_formula, // each formula has 8 coefficients and 1 constant. all 18 bit values. We can load 4 formulas at a time.
+  input  wire [0:4*9*18-1] prog_apu_formula, // each formula has 8 coefficients and 1 constant. all 18 bit values. We can load 4 formulas at a time.
   input  wire [0:24*8-1]   prog_loop_ro_data, // 8 iteration counts and jump amounts. Can load in 1 cycle.
 
   // Push to instruction queue ports
-  output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr
+  output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
+  output reg         queue_we,
+  output reg  [1:0]  queue_instr_type
 );
 enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM} S;
 
@@ -71,16 +73,16 @@ always @(posedge clk) begin
       program_end_pc <= 10;
       S <= PREPARE_PROGRAM_1;
       for (integer i = 0; i < 4; i = i + 1) begin
-        apu_address_registers[i]  <= prog_apu_formula[i*9*18 +: 18];
-        apu_linear_formulas[i]    <= prog_apu_formula[i*9*18+18 +: 8*18];
+        apu_address_registers[i]  <= prog_apu_formula[i*9*18+8*18 +: 18];
+        apu_linear_formulas[i]    <= prog_apu_formula[i*9*18 +: 8*18];
       end
       loop_ro_data <= prog_loop_ro_data;
     end
     PREPARE_PROGRAM_1: begin
       S <= DECODE;
       for (integer i = 0; i < 4; i = i + 1) begin
-        apu_address_registers[i + 4]  <= prog_apu_formula[i*9*18 +: 18];
-        apu_linear_formulas[i + 4]    <= prog_apu_formula[i*9*18+18 +: 8*18];
+        apu_address_registers[i + 4]  <= prog_apu_formula[i*9*18+8*18 +: 18];
+        apu_linear_formulas[i + 4]    <= prog_apu_formula[i*9*18 +: 8*18];
       end
     end
     DECODE: begin
@@ -111,8 +113,8 @@ always @(posedge clk) begin
       S <= UPDATE_APU;
     end
     UPDATE_APU: begin
-      for (integer k = 0; k < LOOP_CNT ; k = k + 1) begin // will this synthesize properly? do we need to use macros?
-        apu_address_registers[k] <= apu_in_di * daddr_di(apu_linear_formulas[k], apu_in_loop_var);
+      for (integer k = 0; k < APU_CNT ; k = k + 1) begin // will this synthesize properly? do we need to use macros?
+        apu_address_registers[k] <= apu_address_registers[k] + apu_in_di * daddr_di(apu_linear_formulas[k], apu_in_loop_var);
       end
       S <= UPDATE_PC;
     end
@@ -132,8 +134,11 @@ always @(posedge clk) begin
         d_main_mem_addr <= daddr_di(apu_linear_formulas[ram_instr[4:6]], loop_cur_depth);
       end
       S <= UPDATE_PC;
+      queue_we <= 1;
+      queue_instr_type <= instruction_type;
     end
     UPDATE_PC: begin
+      queue_we <= 0;
       pc <= pc + 1 - jump_amount;
       jump_amount <= 0;
       S <= pc >= program_end_pc ? FINISH_PROGRAM
@@ -162,6 +167,9 @@ always @(posedge clk) begin
       apu_address_registers[i] <= 18'd0;
       apu_linear_formulas[i] <= 144'd0;
     end
+
+    queue_we <= 0;
+    queue_instr_type <= 0;
   end
 end
 

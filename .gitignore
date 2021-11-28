@@ -2,6 +2,7 @@ a.out
 .*.swp
 riscv-tests
 test-cache
+icarus.out
 run
 out
 *.DS_Store
