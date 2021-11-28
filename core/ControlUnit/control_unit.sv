@@ -44,13 +44,14 @@ reg [0:24*8-1] loop_ro_data;
 localparam SUPERSCALAR_WIDTH = (1 << LOG_SUPERSCALAR_WIDTH);
 
 // Loop variables
-localparam LOG_LOOP_CNT = 3;
+localparam LOG_LOOP_CNT = 3; // right now we have a strong amount of loops allowed in the stack == amount of loops allowed in ro data. We can break this relationship in the future.
 localparam LOOP_CNT = (1 << LOG_LOOP_CNT);
 reg signed [LOG_LOOP_CNT:0] loop_cur_depth; // -1 is empty
-reg [LOOP_CNT-1:0] loop_stack_value [17:0];
-reg [LOOP_CNT-1:0] loop_stack_total_iterations [17:0];
-reg [LOOP_CNT-1:0] loop_stack_jump_amount [7:0];
-reg [LOOP_CNT-1:0] loop_stack_is_independent;
+reg [17:0] loop_stack_value [LOOP_CNT-1:0];
+reg [17:0] loop_stack_total_iterations [LOOP_CNT-1:0];
+reg [7:0] loop_stack_jump_amount [LOOP_CNT-1:0];
+reg loop_stack_is_independent [LOOP_CNT-1:0];
+reg [LOG_LOOP_CNT-1:0] loop_stack_name [LOOP_CNT-1:0]; // name for loop at each stack depth positon. i.e. i, j, k, l, m, ...  ascii(val+'j') tells you the name which corresponds to the cherry program
 wire loop_cur_depth_plus_one = loop_cur_depth + 1;
 reg [7:0] jump_amount;
 wire [17:0] loop_cur_remaining_iterations = loop_stack_total_iterations[loop_cur_depth] - loop_stack_value[loop_cur_depth];
@@ -60,8 +61,8 @@ localparam LOG_APU_CNT = 3;
 localparam APU_CNT = (1 << LOG_APU_CNT);
 reg [LOG_LOOP_CNT-1:0] apu_in_loop_var; // input set by loop update FSM step
 reg [17:0] apu_in_di; // input set by loop update FSM step
-reg [APU_CNT-1:0] apu_linear_formulas [18*8-1:0]; // 8 coefficients
-reg [APU_CNT-1:0] apu_address_registers [17:0]; // current data. starts at the constant vals
+reg [0:18*8-1] apu_linear_formulas [APU_CNT-1:0]; // 8 coefficients
+reg [17:0] apu_address_registers [APU_CNT-1:0]; // current data. starts at the constant vals
 
 always @(posedge clk) begin
   case (S)
@@ -98,13 +99,14 @@ always @(posedge clk) begin
       loop_stack_is_independent[loop_cur_depth_plus_one] <= loop_instr.is_independent;
       loop_stack_jump_amount[loop_cur_depth_plus_one] <= loop_instr.jump_amount;
       loop_stack_total_iterations[loop_cur_depth_plus_one] <= loop_instr.iteration_count;
+      loop_stack_name[loop_cur_depth_plus_one] <= loop_instr.name;
       S <= UPDATE_APU;
     end
     INCREMENT_LOOP: begin
       loop_stack_value[loop_cur_depth]  <= loop_stack_value[loop_cur_depth] + (loop_stack_is_independent[loop_cur_depth] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
-      apu_in_loop_var <= loop_cur_depth;
+      apu_in_loop_var <= loop_stack_name[loop_cur_depth];
       
-      if (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH) begin
+      if (loop_stack_is_independent[loop_cur_depth] && loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH) begin
         apu_in_di <= -1 * loop_stack_total_iterations[loop_cur_depth];
       end else begin
         apu_in_di                  <=                         (loop_stack_is_independent[loop_cur_depth] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
@@ -159,6 +161,7 @@ always @(posedge clk) begin
       loop_stack_value[i] <= 18'd0;
       loop_stack_total_iterations[i] <= 18'd0;
       loop_stack_jump_amount[i] <= 8'd0;
+      loop_stack_name[i] <= {LOG_LOOP_CNT{1'b0}};
     end
     jump_amount <= 0;
     apu_in_loop_var <= 0;
@@ -174,11 +177,20 @@ always @(posedge clk) begin
 end
 
 function [17:0] daddr_di;
-	input [18*8-1:0] linear_formula;
+	input [0:18*8-1] linear_formula;
   input [LOG_LOOP_CNT-1:0] loop_var;
 	begin
-    // check if synthesized right, might need big switch case
-		daddr_di = linear_formula[loop_var*18 +: 18];
+    // daddr_di = linear_formula[loop_var*18 +: 18]; // synthesizes poorly
+    case (loop_var)
+      3'd0: daddr_di = linear_formula[0*18 +: 18];
+      3'd1: daddr_di = linear_formula[1*18 +: 18];
+      3'd2: daddr_di = linear_formula[2*18 +: 18];
+      3'd3: daddr_di = linear_formula[3*18 +: 18];
+      3'd4: daddr_di = linear_formula[4*18 +: 18];
+      3'd5: daddr_di = linear_formula[5*18 +: 18];
+      3'd6: daddr_di = linear_formula[6*18 +: 18];
+      3'd7: daddr_di = linear_formula[7*18 +: 18];
+    endcase
 	end
 endfunction
 

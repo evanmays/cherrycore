@@ -10,4 +10,5 @@ typedef struct packed {
   reg [17:0] iteration_count;
   reg [5:0] jump_amount;
   reg is_independent;
+  reg [2:0] name; // ascii_cast('i'+name) to get the character
 } decoded_loop_instruction;

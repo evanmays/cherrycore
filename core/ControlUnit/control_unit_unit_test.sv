@@ -24,6 +24,7 @@ module control_unit_unit_test();
     logic [LOG_LOOP_CNT-1:0] loop_var;
     logic         queue_we;
     logic  [1:0]  queue_instr_type;
+    reg [0:15] prog_0, prog_1, prog_2, prog_3, prog_4, prog_5, prog_6, prog_7, prog_8, prog_9, prog_10;
 
     control_unit 
     dut 
@@ -60,47 +61,50 @@ module control_unit_unit_test();
         /// teardown() runs when a test ends
     end
     endtask
-
+    
     `TEST_SUITE("SUITE_NAME")
 
-    `UNIT_TEST("TEST_NAME")
+    
+    `UNIT_TEST("TINY_PROG")
+        // simple program
+        // start_loop, cisa_mem_read, end_loop_or_jump
+        // cisa_start_loop(independent=False, loop_addr=0) // bits loop instr, non independent, start loop, loop location 0, fill
+        prog_6 = 16'hD000; // bit_pack_loop_instruction(is_independent=False, is_start_loop=True, loop_address=0)
+        // cisa_mem_read(cache_apu_addr=2, main_mem_apu_addr=4, cache_slot=0) // bits ram instr, non write, cache apu, main mem apu, cache_slot, fill
+        prog_7 = 16'h4A00; // bit_pack_ram_instruction(is_write=False, cache_apu_address=2, main_memory_apu_address=4, cache_slot=0)
+        // cisa_end_loop()
+        prog_8 = 16'hC000; // bit_pack_loop_instruction(is_start_loop=False)
+
+        
         `ASSERT((dut.S === dut.IDLE));
         @(posedge clk); #1
-        $display("%d %d", dut.apu_address_registers[4], dut.loop_cur_depth);
         `ASSERT((dut.S === dut.PREPARE_PROGRAM_0));
         prog_apu_formula = 648'h000180000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000001000000000000000000000000000000000000000000000;
-        prog_loop_ro_data = 192'h000103000000000000000000000000000000000000000000;
+        prog_loop_ro_data = 192'h0000c2000000000000000000000000000000000000000000;
         @(posedge clk); #1
-        $display("%d %d", dut.apu_address_registers[4], dut.loop_cur_depth);
         `ASSERT((dut.S === dut.PREPARE_PROGRAM_1));
         prog_apu_formula = 648'h0000000000000000020000000000000000000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;
         @(posedge clk); #1
-        $display("%d %d", dut.apu_address_registers[4], dut.loop_cur_depth);
         `ASSERT((dut.S === dut.DECODE));
+        `ASSERT((pc == 6))
+        raw_instruction = prog_6;
 
-        // cisa_start_loop(independent=False, loop_addr=0) // bits loop instr, non independent, start loop, loop location 0, fill
-        raw_instruction = {2'd3, 1'b0, 1'b1, 3'b0, 9'd0}; // Preprocessor script so we can put python cisa_ function here with assembler mode enabled.
         @(posedge clk); #1
         `ASSERT((dut.S === dut.START_NEW_LOOP));
         
-        $display("%d %d", dut.apu_address_registers[4], dut.loop_cur_depth);
         `ASSERT((dut.instruction_type === INSTR_TYPE_LOOP));
         
         
         @(posedge clk); #1
         `ASSERT((dut.S === dut.UPDATE_APU));
-        $display("%d %d", dut.apu_address_registers[4], dut.loop_cur_depth);
         
         @(posedge clk); #1
         `ASSERT((dut.S === dut.UPDATE_PC));
-        $display("%d %d", dut.apu_address_registers[4], dut.loop_cur_depth);
         `ASSERT((pc === 6));
         @(posedge clk); #1
         `ASSERT((pc === 7));
         `ASSERT((dut.S === dut.DECODE));
-        
-        // cisa_mem_read(cache_apu_addr=2, main_mem_apu_addr=4, cache_slot=0) // bits ram instr, non write, cache apu, main mem apu, cache_slot, fill
-        raw_instruction = 16'h4A00; // bit_pack_ram_instruction(is_write=False, cache_apu_address=2, main_memory_apu_address=4, cache_slot=0)
+        raw_instruction = prog_7;
         
         @(posedge clk); #1
         `ASSERT((dut.instruction_type === INSTR_TYPE_RAM));
@@ -117,7 +121,62 @@ module control_unit_unit_test();
         @(posedge clk); #1
         `ASSERT((queue_we === 0));
         `ASSERT((pc === 8));
-        
+        `ASSERT((dut.S === dut.DECODE));
+        `ASSERT((dut.loop_stack_value[0] === 0));
+
+        raw_instruction = prog_8;
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.INCREMENT_LOOP));
+        `ASSERT((dut.loop_stack_value[0] === 0));
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.UPDATE_APU));
+        `ASSERT((dut.loop_stack_value[0] === 1));
+        `ASSERT((pc === 8));
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.UPDATE_PC));
+        `ASSERT((pc === 8));
+
+        // Jump and start second iteration here
+
+        @(posedge clk); #1
+        `ASSERT((pc === 7));
+        `ASSERT((dut.S === dut.DECODE));
+        raw_instruction = prog_7;
+
+        @(posedge clk); #1
+        `ASSERT((dut.instruction_type === INSTR_TYPE_RAM));
+        `ASSERT((dut.S === dut.INSERT_TO_QUEUE));
+        `ASSERT((queue_we === 0));
+
+        @(posedge clk); #1
+        `ASSERT((main_mem_addr === 3));
+        `ASSERT((cache_addr === 2));
+        `ASSERT((queue_we === 1));
+        `ASSERT((queue_instr_type === INSTR_TYPE_RAM));
+        `ASSERT((dut.S === dut.UPDATE_PC));
+        `ASSERT((pc === 7));
+        @(posedge clk); #1
+        `ASSERT((queue_we === 0));
+        `ASSERT((pc === 8));
+        `ASSERT((dut.S === dut.DECODE));
+        `ASSERT((dut.loop_stack_value[0] === 1));
+
+        raw_instruction = prog_8;
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.INCREMENT_LOOP));
+        `ASSERT((dut.loop_stack_value[0] === 1));
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.UPDATE_APU));
+        `ASSERT((dut.loop_stack_value[0] === 2));
+        `ASSERT((pc === 8));
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.UPDATE_PC));
+        `ASSERT((pc === 8));
+
+        // Jump and start third iteration here
+
+        @(posedge clk); #1
+        `ASSERT((pc === 7));
 
     `UNIT_TEST_END
 

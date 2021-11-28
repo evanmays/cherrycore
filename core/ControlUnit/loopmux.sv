@@ -7,7 +7,7 @@ module loopmux (
 );
 reg [23:0] out;
 //assign out = in[addr*18*6 +: 18*6]; // synthesizes so poorly it uses a DSP lmao
-assign loop_instr = {new_loop, out, independent};
+assign loop_instr = {new_loop, out, independent, addr};
 always @(*) begin
     case (addr)
         3'd0: out <= in[0*24 +: 24];
