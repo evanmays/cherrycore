@@ -35,7 +35,10 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   // Push to instruction queue ports
   output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
   output reg         queue_we,
-  output reg  [1:0]  queue_instr_type
+  output reg  [1:0]  queue_instr_type,
+  output reg  [0:13] queue_arith_instr,
+  output reg  [0:8]  queue_ram_instr,
+  output reg  [0:9] queue_ld_st_instr
 );
 enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM} S;
 
@@ -135,8 +138,8 @@ always @(posedge clk) begin
     end
     INSERT_TO_QUEUE: begin
       if (instruction_type == INSTR_TYPE_LOAD_STORE) begin
-        cache_addr     <= apu_address_registers[ld_st_instr[11:13]];
-        d_cache_addr    <= daddr_di(apu_linear_formulas[ld_st_instr[11:13]], loop_cur_depth);
+        cache_addr     <= apu_address_registers[ld_st_instr[1:3]];
+        d_cache_addr    <= daddr_di(apu_linear_formulas[ld_st_instr[1:3]], loop_cur_depth);
       end
       if (instruction_type == INSTR_TYPE_RAM) begin
         cache_addr     <= apu_address_registers[ram_instr[1:3]];
@@ -146,14 +149,17 @@ always @(posedge clk) begin
       end
       S <= UPDATE_PC;
       queue_we <= 1;
-      queue_instr_type <= instruction_type;
+      queue_instr_type  <= instruction_type;
+      queue_arith_instr <= arith_instr;
+      queue_ram_instr   <= ram_instr;
+      queue_ld_st_instr <= ld_st_instr;
     end
     UPDATE_PC: begin
       queue_we <= 0;
       pc <= pc + 1 - jump_amount;
       jump_amount <= 0;
       S <= (pc + 1 - jump_amount) >= program_end_pc ? FINISH_PROGRAM
-                                : DECODE;
+                                                    : DECODE;
     end
     FINISH_PROGRAM: begin
       program_complete <= 1;
@@ -211,8 +217,8 @@ endfunction
 //
 wire [1:0] instruction_type = raw_instruction[0:1] == 2'd0 ? INSTR_TYPE_LOAD_STORE : raw_instruction[0:1] == 2'd1 ? INSTR_TYPE_RAM : raw_instruction[0:1] == 2'd2 ? INSTR_TYPE_ARITHMETIC : INSTR_TYPE_LOOP;
 wire [0:13] arith_instr = raw_instruction[2:15];
-wire [0:6]  ram_instr   = raw_instruction[2:8]; // 1 bit is_write, 6 bit 2 apus
-wire [0:13] ld_st_instr = raw_instruction[2:15]; // 1 bit is_load, 2 bit cache slot, 2 bit register_target, 2 bit height, 2 bit width, 1 bit zero_flag, 1 bit skip_flag, 3 bit apu
+wire [0:8]  ram_instr   = raw_instruction[2:10]; // 1 bit is_write, 6 bit 2 apus, 2 bits cache slot
+wire [0:9] ld_st_instr = raw_instruction[2:11]; // 1 bit is_load, 3 bit apu, 2 bit cache slot, 2 bit register_target, 1 bit zero_flag, 1 bit skip_flag, fill (TODO add 2 bit height, 2 bit width)
 decoded_loop_instruction loop_instr;
 loopmux loopmux (
     .addr         (raw_instruction[4:6]),

@@ -1,20 +1,42 @@
+from functools import cache
 from bitstring import pack, BitArray
 from enum import IntEnum
 from sympy import expand, symbols, Poly, degree_list
+from sympy.core.logic import Not
 
 LOOP_CNT_MAX = 8
+APU_CNT_MAX = 8
 
 class _Category(IntEnum):
     MEMORY = 0
     RAM = 1
     PROCESSING = 2
     LOOP = 3
+class Reg(IntEnum):
+    MATMUL_INPUT = 0
+    MATMUL_WEIGHTS = 1
+    MATMUL_OUTPUT = 2
+    MATMUL_ACC = 3
 
-def bit_pack_processing_instruction(target, src, is_default):
+class UnaryOps(IntEnum):
+  RELU = 0
+  EXP = 1
+  LOG = 2
+  GT0 = 3
+
+def get_processing_category(op):
+    if type(op) == UnaryOps:
+        return 0
+def bit_pack_unop_instruction(op: UnaryOps):
+    return pack('uint:2, uint:2, uint:2, uint:10', _Category.PROCESSING, get_processing_category(op), op, 0)
+def bit_pack_binop_instruction():
     raise NotImplementedError
-    # TODO: assert the params valid
-    return pack('uint:2, 2*uint:2, uint:1, uint:8', _Category.PROCESSING, target, src, is_default, 0)
-
+def bit_pack_matmul_instruction():
+    raise NotImplementedError
+def bit_pack_mulacc_instruction():
+    raise NotImplementedError
+def bit_pack_reduce_instruction():
+    raise NotImplementedError
 def bit_pack_loop_instruction(is_start_loop: bool, is_independent: bool = None, loop_address: int = None):
     assert is_start_loop is not None and type(is_start_loop) == bool
     if is_start_loop:
@@ -25,15 +47,17 @@ def bit_pack_loop_instruction(is_start_loop: bool, is_independent: bool = None, 
         assert is_independent == None
     return pack('uint:2, uint:1, uint:1, uint:3, uint:9', _Category.LOOP, is_independent or 0, is_start_loop, loop_address or 0, 0)
 
-def bit_pack_cache_instruction(apu_address, target, height, width, zero_flag, skip_flag):
-    # TODO: assert the params valid
-    raise NotImplementedError
-    return pack('uint:2, uint:3, 3*uint:2, 2*uint:1, uint:2', _Category.MEMORY, apu_address, target, height, width, zero_flag, skip_flag, 0)
-
-def bit_pack_ram_instruction(is_write: bool, cache_apu_address, main_memory_apu_address, cache_slot):
+def bit_pack_cache_instruction(is_load: bool, apu_address, cache_slot: int, target: Reg, zero_flag: bool = False, skip_flag: bool = False):
+    assert apu_address < APU_CNT_MAX
     assert cache_slot < 4
-    assert cache_apu_address < 8
-    assert main_memory_apu_address < 8
+    # Note: strides should be stored in the apu. We need to add support for that
+    # Note: height and width should be stored in the apu (need a special max function that takes a specified loop var as input). We need to add support for that
+    return pack('uint:2, uint:1, uint:3, uint:2, uint:2, 2*uint:1, uint:4', _Category.MEMORY, is_load, apu_address, cache_slot, target, zero_flag, skip_flag, 0)
+
+def bit_pack_ram_instruction(is_write: bool, cache_apu_address, main_memory_apu_address, cache_slot: int):
+    assert cache_slot < 4
+    assert cache_apu_address < APU_CNT_MAX
+    assert main_memory_apu_address < APU_CNT_MAX
     return pack('uint:2, uint:1, 2*uint:3, uint:2, uint:5', _Category.RAM, is_write, cache_apu_address, main_memory_apu_address, cache_slot, 0)
 
 def bit_pack_program_header(loop_iteration_count: list, loop_jump_amount: list, apu_formulas):
@@ -106,3 +130,27 @@ if __name__ == "__main__":
     print(x)
     a = bit_pack_loop_instruction(is_start_loop=False)
     print(a)
+    print("The following is the slow relu prog")
+    h = bit_pack_program_header(
+        loop_iteration_count=[256] + [0] * 7,
+        loop_jump_amount=[6] + [0] * 7,
+        apu_formulas=[
+            i,
+            256 + i,
+            512 + i, None, None, None, None, None
+        ]
+    )
+    y = bit_pack_loop_instruction(is_independent=False, is_start_loop=True, loop_address=0)
+    print(y)
+    x = bit_pack_ram_instruction(is_write=False, cache_apu_address=0, main_memory_apu_address=1, cache_slot=0)
+    print(x)
+    z = bit_pack_cache_instruction(apu_address=0, cache_slot=0, target=Reg.MATMUL_INPUT)
+    print(z)
+    w = bit_pack_unop_instruction(op=UnaryOps.RELU)
+    print(w)
+    z = bit_pack_cache_instruction(apu_address=0, cache_slot=1, target=Reg.MATMUL_OUTPUT)
+    print(z)
+    x = bit_pack_ram_instruction(is_write=True, cache_apu_address=0, main_memory_apu_address=2, cache_slot=1)
+    print(x)
+    y = bit_pack_loop_instruction(is_start_loop=False)
+    print(y)
