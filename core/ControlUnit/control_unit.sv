@@ -20,10 +20,16 @@
 module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   input               clk,
   input               reset,
+
+  // Program Header Ports
   input  bit  [0:15]  raw_instruction, // using bit so we can cast raw_instruction[0:1] to instruction_type
-  output reg  [15:0]  pc
+  input  wire [4*9*18-1:0] prog_apu_formula, // each formula has 8 coefficients and 1 constant. all 18 bit values. We can load 4 formulas at a time.
+  input  wire [0:24*8-1]   prog_loop_ro_data, // 8 iteration counts and jump amounts. Can load in 1 cycle.
+
+  output reg  [15:0]  pc,
+  output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr
 );
-enum {IDLE, PREPARE_PROGRAM, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM} S;
+enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM} S;
 e_instr_type instr_type;
 
 // Info about current program
@@ -46,28 +52,38 @@ reg [7:0] jump_amount;
 wire [17:0] loop_remaining_iterations = loop_stack_total_iterations[loop_depth] - loop_stack_value[loop_depth];
 
 // APU
-parameter LOG_APU_CNT = 3;
-parameter APU_CNT = (1 << LOG_APU_CNT);
+localparam LOG_APU_CNT = 3;
+localparam APU_CNT = (1 << LOG_APU_CNT);
 reg [LOG_LOOP_CNT-1:0] apu_in_loop_var; // input set by loop update FSM step
 reg [17:0] apu_in_di; // input set by loop update FSM step
-reg [APU_CNT-1:0] apu_linear_formulas [18*9-1:0]; // ro_data: each formula has 8 coefficients and 1 constant
-reg [APU_CNT-1:0] apu_address_registers [17:0]; // current data
-reg [LOG_APU_CNT-1:0] cache_apu, main_mem_apu;
+reg [APU_CNT-1:0] apu_linear_formulas [18*8-1:0]; // 8 coefficients
+reg [APU_CNT-1:0] apu_address_registers [17:0]; // current data. starts at the constant vals
 
 always @(posedge clk) begin
   case (S)
     IDLE: begin
-      S <= PREPARE_PROGRAM;
+      S <= PREPARE_PROGRAM_0;
     end
-    PREPARE_PROGRAM: begin
+    PREPARE_PROGRAM_0: begin
       pc <= 0;
       program_end_pc <= 10;
+      S <= PREPARE_PROGRAM_1;
+      for (integer i = 0; i < 4; i = i + 1) begin
+        apu_address_registers[i]  <= prog_apu_formula[i*9*18 +: 18];
+        apu_linear_formulas[i]    <= prog_apu_formula[i*9*18+18 +: 8*18];
+      end
+      loop_ro_data <= prog_loop_ro_data;
+    end
+    PREPARE_PROGRAM_1: begin
       S <= DECODE;
-      // setup apu_address_registers to constant values
-      // load loop_ro_data <= 0;
+      integer k;
+      for (integer i = 0; i < 4; i = i + 1) begin
+        k = i + 4;
+        apu_address_registers[k]  <= prog_apu_formula[i*9*18 +: 18];
+        apu_linear_formulas[k]    <= prog_apu_formula[i*9*18+18 +: 8*18];
+      end
     end
     DECODE: begin
-      
       case (instr_type)
         INSTR_TYPE_LOOP: S <= loop_instr.is_new_loop ? START_NEW_LOOP : INCREMENT_LOOP;
         INSTR_TYPE_RAM: S <= INSERT_TO_QUEUE;// INIT_PREFETCH;
@@ -106,11 +122,14 @@ always @(posedge clk) begin
     end
     INSERT_TO_QUEUE: begin
       if (instruction_type == INSTR_TYPE_LOAD_STORE) begin
-        cache_apu     <= apu_address_registers[ld_st_instr[11:13]];
+        cache_addr     <= apu_address_registers[ld_st_instr[11:13]];
+        dcache_addr    <= daddr_di(apu_linear_formulas[ld_st_instr[11:13]], loop_depth);
       end
       if (instruction_type == INSTR_TYPE_RAM) begin
-        cache_apu     <= apu_address_registers[ram_instr[1:3]];
-        main_mem_apu  <= apu_address_registers[ram_instr[4:6]];
+        cache_addr     <= apu_address_registers[ram_instr[1:3]];
+        main_mem_addr  <= apu_address_registers[ram_instr[4:6]];
+        dcache_addr    <= daddr_di(apu_linear_formulas[ram_instr[1:3]], loop_depth);
+        dmain_mem_addr <= daddr_di(apu_linear_formulas[ram_instr[4:6]], loop_depth);
       end
       S <= UPDATE_PC;
     end
@@ -140,20 +159,13 @@ always @(posedge clk) begin
     apu_in_di <= 0;
     for (integer i=0; i<APU_CNT; i=i+1) begin
       apu_address_registers[i] <= 18'd0;
-      apu_linear_formulas[i] <= 162'd0;
+      apu_linear_formulas[i] <= 144'd0;
     end
   end
 end
 
-
-function [17:0] constant;
-	input [18*9-1:0] linear_formula;
-	begin
-		constant = linear_formula[144 +: 18];
-	end
-endfunction
 function [17:0] daddr_di;
-	input [18*9-1:0] linear_formula;
+	input [18*8-1:0] linear_formula;
   input [LOG_LOOP_CNT-1:0] loop_var;
 	begin
     // check if synthesized right, might need big switch case
