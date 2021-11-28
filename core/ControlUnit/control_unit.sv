@@ -108,6 +108,8 @@ always @(posedge clk) begin
       
       if (loop_stack_is_independent[loop_cur_depth] && loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH) begin
         apu_in_di <= -1 * loop_stack_total_iterations[loop_cur_depth];
+      end else if (loop_cur_remaining_iterations == 1) begin
+        apu_in_di <= -1 * loop_stack_total_iterations[loop_cur_depth];
       end else begin
         apu_in_di                  <=                         (loop_stack_is_independent[loop_cur_depth] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
         jump_amount <= loop_stack_jump_amount[loop_cur_depth];

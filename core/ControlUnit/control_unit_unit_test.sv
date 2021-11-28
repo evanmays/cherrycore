@@ -177,6 +177,41 @@ module control_unit_unit_test();
 
         @(posedge clk); #1
         `ASSERT((pc === 7));
+        `ASSERT((dut.S === dut.DECODE));
+        raw_instruction = prog_7;
+
+        @(posedge clk); #1
+        `ASSERT((dut.instruction_type === INSTR_TYPE_RAM));
+        `ASSERT((dut.S === dut.INSERT_TO_QUEUE));
+        `ASSERT((queue_we === 0));
+
+        @(posedge clk); #1
+
+        `ASSERT((main_mem_addr === 3));
+        `ASSERT((cache_addr === 4));
+        `ASSERT((queue_we === 1));
+        `ASSERT((queue_instr_type === INSTR_TYPE_RAM));
+        `ASSERT((dut.S === dut.UPDATE_PC));
+        `ASSERT((pc === 7));
+        @(posedge clk); #1
+        `ASSERT((queue_we === 0));
+        `ASSERT((pc === 8));
+        `ASSERT((dut.S === dut.DECODE));
+        `ASSERT((dut.loop_stack_value[0] === 2));
+
+        raw_instruction = prog_8;
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.INCREMENT_LOOP));
+        `ASSERT((dut.loop_stack_value[0] === 2));
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.UPDATE_APU));
+        `ASSERT((dut.loop_stack_value[0] === 3));
+        `ASSERT((pc === 8));
+        @(posedge clk); #1
+        `ASSERT((dut.S === dut.UPDATE_PC));
+        `ASSERT((pc === 8));
+        @(posedge clk); #1
+        `ASSERT((pc === 9));
 
     `UNIT_TEST_END
 
