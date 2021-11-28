@@ -11,7 +11,10 @@
 module control_unit_unit_test();
 
     `SVUT_SETUP
-
+    bit [0:15] icache [15:0];
+    always @(posedge clk) begin
+        #1 raw_instruction = icache[pc];
+    end
     parameter LOG_LOOP_CNT = 3;
     logic clk;
     logic reset;
@@ -25,12 +28,13 @@ module control_unit_unit_test();
     logic         queue_we;
     logic  [1:0]  queue_instr_type;
     reg [0:15] prog_0, prog_1, prog_2, prog_3, prog_4, prog_5, prog_6, prog_7, prog_8, prog_9, prog_10;
-
+    logic program_complete;
     control_unit 
     dut 
     (
     clk,
     reset,
+    program_complete,
     raw_instruction,
     pc,
     prog_apu_formula,
@@ -61,19 +65,81 @@ module control_unit_unit_test();
         /// teardown() runs when a test ends
     end
     endtask
+    task automatic posedge_clk_until_queue_we_is_on_with_max_iter(int max_iterations);
+        int done = 0; // break statement not supported :(
+        for(int i = 0; i < max_iterations; i++) begin
+            if (!done) @(posedge clk);
+            if (queue_we === 1'b1) done = 1;
+        end
+    endtask
+    task automatic posedge_clk_until_program_complete_and_assert_no_more_queue_write_with_max_iter(int max_iterations);
+        int done = 0; // break statement not supported :(
+        for(int i = 0; i < max_iterations; i++) begin
+            int old = dut.S;
+            if (!done) @(posedge clk);
+            if (program_complete === 1'b1) done = 1;
+            `ASSERT((queue_we === 1'b0));
+        end
+    endtask
+    
     
     `TEST_SUITE("SUITE_NAME")
 
-    
+    `UNIT_TEST("RELU_SLOW_PROG")
+    icache[6] = 16'hd000;  // start_loop
+    icache[7] = 16'h4080;  // cisa_mem_read
+    icache[8] = 16'h0000;  // cisa_load
+    icache[9] = 16'h8000;  // cisa_relu
+    icache[10] = 16'h0300; // cisa_store
+    icache[11] = 16'h6120; // cisa_mem_write
+    icache[12] = 16'hc000; // end_loop_or_jump
+    `ASSERT((dut.S === dut.IDLE));
+    @(posedge clk); #1
+    `ASSERT((dut.S === dut.PREPARE_PROGRAM_0));
+    prog_apu_formula = 648'h000040000000000000000000000000000000000000001000000000000000000000000000000000100000040000000000000000000000000000000008000000000000000000000000000000000000000000;
+    prog_loop_ro_data = 192'h004006000000000000000000000000000000000000000000;
+    @(posedge clk); #1
+    `ASSERT((dut.S === dut.PREPARE_PROGRAM_1));
+    prog_apu_formula = 648'h000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;
+    @(posedge clk); #1
+    `ASSERT((dut.S === dut.DECODE));
+    `ASSERT((pc == 6));
+    for(int k = 0; k < 256; k++) begin
+        posedge_clk_until_queue_we_is_on_with_max_iter(10);
+        `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_instr_type === INSTR_TYPE_RAM));
+        @(posedge clk);
+        `ASSERT((queue_we === 1'b0));
+        posedge_clk_until_queue_we_is_on_with_max_iter(10);
+        `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_instr_type === INSTR_TYPE_LOAD_STORE));
+        posedge_clk_until_queue_we_is_on_with_max_iter(10);
+        `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_instr_type === INSTR_TYPE_ARITHMETIC));
+        posedge_clk_until_queue_we_is_on_with_max_iter(10);
+        `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_instr_type === INSTR_TYPE_LOAD_STORE));
+        posedge_clk_until_queue_we_is_on_with_max_iter(10);
+        `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_instr_type === INSTR_TYPE_RAM));
+        @(posedge clk);
+        `ASSERT((queue_we === 1'b0));
+    end
+    // loop is over now. program should be done! Stop pushing things to instruction queue
+    posedge_clk_until_program_complete_and_assert_no_more_queue_write_with_max_iter(10);
+    `ASSERT((program_complete === 1'b1));
+
+    `UNIT_TEST_END
+
     `UNIT_TEST("TINY_PROG")
         // simple program
         // start_loop, cisa_mem_read, end_loop_or_jump
         // cisa_start_loop(independent=False, loop_addr=0) // bits loop instr, non independent, start loop, loop location 0, fill
-        prog_6 = 16'hD000; // bit_pack_loop_instruction(is_independent=False, is_start_loop=True, loop_address=0)
+        icache[6] = 16'hD000; // bit_pack_loop_instruction(is_independent=False, is_start_loop=True, loop_address=0)
         // cisa_mem_read(cache_apu_addr=2, main_mem_apu_addr=4, cache_slot=0) // bits ram instr, non write, cache apu, main mem apu, cache_slot, fill
-        prog_7 = 16'h4A00; // bit_pack_ram_instruction(is_write=False, cache_apu_address=2, main_memory_apu_address=4, cache_slot=0)
+        icache[7] = 16'h4A00; // bit_pack_ram_instruction(is_write=False, cache_apu_address=2, main_memory_apu_address=4, cache_slot=0)
         // cisa_end_loop()
-        prog_8 = 16'hC000; // bit_pack_loop_instruction(is_start_loop=False)
+        icache[8] = 16'hC000; // bit_pack_loop_instruction(is_start_loop=False)
 
         
         `ASSERT((dut.S === dut.IDLE));
@@ -86,8 +152,7 @@ module control_unit_unit_test();
         prog_apu_formula = 648'h0000000000000000020000000000000000000000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000;
         @(posedge clk); #1
         `ASSERT((dut.S === dut.DECODE));
-        `ASSERT((pc == 6))
-        raw_instruction = prog_6;
+        `ASSERT((pc == 6));
 
         @(posedge clk); #1
         `ASSERT((dut.S === dut.START_NEW_LOOP));
@@ -104,8 +169,6 @@ module control_unit_unit_test();
         @(posedge clk); #1
         `ASSERT((pc === 7));
         `ASSERT((dut.S === dut.DECODE));
-        raw_instruction = prog_7;
-        
         @(posedge clk); #1
         `ASSERT((dut.instruction_type === INSTR_TYPE_RAM));
         `ASSERT((dut.S === dut.INSERT_TO_QUEUE));
@@ -124,7 +187,6 @@ module control_unit_unit_test();
         `ASSERT((dut.S === dut.DECODE));
         `ASSERT((dut.loop_stack_value[0] === 0));
 
-        raw_instruction = prog_8;
         @(posedge clk); #1
         `ASSERT((dut.S === dut.INCREMENT_LOOP));
         `ASSERT((dut.loop_stack_value[0] === 0));
@@ -141,7 +203,6 @@ module control_unit_unit_test();
         @(posedge clk); #1
         `ASSERT((pc === 7));
         `ASSERT((dut.S === dut.DECODE));
-        raw_instruction = prog_7;
 
         @(posedge clk); #1
         `ASSERT((dut.instruction_type === INSTR_TYPE_RAM));
@@ -161,7 +222,6 @@ module control_unit_unit_test();
         `ASSERT((dut.S === dut.DECODE));
         `ASSERT((dut.loop_stack_value[0] === 1));
 
-        raw_instruction = prog_8;
         @(posedge clk); #1
         `ASSERT((dut.S === dut.INCREMENT_LOOP));
         `ASSERT((dut.loop_stack_value[0] === 1));
@@ -178,7 +238,6 @@ module control_unit_unit_test();
         @(posedge clk); #1
         `ASSERT((pc === 7));
         `ASSERT((dut.S === dut.DECODE));
-        raw_instruction = prog_7;
 
         @(posedge clk); #1
         `ASSERT((dut.instruction_type === INSTR_TYPE_RAM));
@@ -199,7 +258,6 @@ module control_unit_unit_test();
         `ASSERT((dut.S === dut.DECODE));
         `ASSERT((dut.loop_stack_value[0] === 2));
 
-        raw_instruction = prog_8;
         @(posedge clk); #1
         `ASSERT((dut.S === dut.INCREMENT_LOOP));
         `ASSERT((dut.loop_stack_value[0] === 2));

@@ -21,6 +21,9 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   input               clk,
   input               reset,
 
+  // Program execution queue ports
+  output reg          program_complete,
+
   // Instruction Fetch ports (fetch and decode happen in same cycle. so can't register the icache output)
   input       [0:15]  raw_instruction, // using bit so we can cast raw_instruction[0:1] to instruction_type
   output reg  [15:0]  pc,
@@ -68,10 +71,11 @@ always @(posedge clk) begin
   case (S)
     IDLE: begin
       S <= PREPARE_PROGRAM_0;
+      program_complete <= 0;
     end
     PREPARE_PROGRAM_0: begin
       pc <= 6;
-      program_end_pc <= 10;
+      program_end_pc <= 13; // should be one spot after the last spot in the program. End of program (non inclusive)
       S <= PREPARE_PROGRAM_1;
       for (integer i = 0; i < 4; i = i + 1) begin
         apu_address_registers[i]  <= prog_apu_formula[i*9*18+8*18 +: 18];
@@ -108,9 +112,12 @@ always @(posedge clk) begin
       
       if (loop_stack_is_independent[loop_cur_depth] && loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH) begin
         apu_in_di <= -1 * loop_stack_total_iterations[loop_cur_depth];
+        loop_cur_depth <= loop_cur_depth - 1;
       end else if (loop_cur_remaining_iterations == 1) begin
         apu_in_di <= -1 * loop_stack_total_iterations[loop_cur_depth];
+        loop_cur_depth <= loop_cur_depth - 1;
       end else begin
+        
         apu_in_di                  <=                         (loop_stack_is_independent[loop_cur_depth] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
         jump_amount <= loop_stack_jump_amount[loop_cur_depth];
       end
@@ -145,10 +152,11 @@ always @(posedge clk) begin
       queue_we <= 0;
       pc <= pc + 1 - jump_amount;
       jump_amount <= 0;
-      S <= pc >= program_end_pc ? FINISH_PROGRAM
+      S <= (pc + 1 - jump_amount) >= program_end_pc ? FINISH_PROGRAM
                                 : DECODE;
     end
     FINISH_PROGRAM: begin
+      program_complete <= 1;
       S <= IDLE;
     end
   endcase
@@ -175,6 +183,8 @@ always @(posedge clk) begin
 
     queue_we <= 0;
     queue_instr_type <= 0;
+
+    program_complete <= 0;
   end
 end
 
