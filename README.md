@@ -34,6 +34,8 @@ Current tiny cherry 1 in `core/top.sv` can run a hard coded relu program! It doe
 
 Prerequisites aren't documented but the script that synthesizes, place-n-routes, uploads the bitstream, and runs a test python program is `./test_a7100t_relu.sh`
 
+Next step is to implement the instruction queue so we can integrate control unit with the execution pipelines. Then add a hardcoded program cache similar to the control unit unit test module. Put a bunch of programs in there. Add a program execution queue that can be DMA'd into from python. Implement the rest of the unary ops. Now python can drive the fpga and run the hardcoded programs (just activation functions for now) Can start integrating with tinygrad and/or pytorch. (`torch.ones((10,10), device=Cherry).relu()` should work)
+
 # Contributors Getting Started
 
 ### Prerequisites (MacOS & linux... sry Windows)

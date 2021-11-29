@@ -55,10 +55,10 @@ module instruction_queue #(parameter LOG_SUPERSCALAR_WIDTH=3)(
 
   // Pop
   input                         re,
-  output dma_instruction        dma_instr,
-  output arithmetic_instruction arithmetic_instr,
-  output regfile_instruction    cache_instr,
-  output wire                   empty,
+  output dma_instruction        dma_instr,        // todo, adjust the input format to match this
+  output arithmetic_instruction arithmetic_instr, // todo, adjust the input format to match this
+  output regfile_instruction    cache_instr,      // todo, adjust the input format to match this
+  output wire                   empty,            // todo
 
   // Push
   input                                 we,
