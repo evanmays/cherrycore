@@ -11,7 +11,7 @@ bool AlmostEqualRelative(float A, float B)
   if ((A == INFINITY && B == INFINITY) || (A == -INFINITY && B == -INFINITY)) {
     return true;
   }
-  if ((A == NAN && B == NAN) || (A == -NAN && B == -NAN)) {
+  if (isnan(A) && isnan(B)) {
     return true;
   }
   // https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
@@ -105,12 +105,12 @@ void nan_test_all(void) {
 }
 
 int main(void) {
-  fesetenv(FE_DFL_DISABLE_SSE_DENORMS_ENV);
-  basic_test_tf32();
-  printsuccess("basic_test_tf32");
+  // fesetenv(FE_DFL_DISABLE_SSE_DENORMS_ENV);
   infinity_test_all();
   printsuccess("infinity_test_all");
   nan_test_all();
   printsuccess("nan_test_all");
+  basic_test_tf32();
+  printsuccess("basic_test_tf32");
   return 0;
 }
