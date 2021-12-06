@@ -7,7 +7,7 @@ module Mul (
     output     [WIDTH-1:0] OUT
 );
     localparam EXPONENT = 8; // dont change. Not fully parameterized
-    parameter MANTISSA = 8;
+    parameter MANTISSA = 9; // default to cherry float
     localparam WIDTH = EXPONENT+MANTISSA+1;
     localparam MAX_EXPONENT = {(EXPONENT){1'b1}};
 
@@ -31,8 +31,8 @@ module Mul (
     wire B_is_inf = B_exponent_is_max && B_f == 0;
     wire A_is_nan = A_exponent_is_max && A_f != 0;
     wire B_is_nan = B_exponent_is_max && B_f != 0;
-    wire A_is_underflowed = A_exponent_is_min && A_f != 0; // lets just flush to zero so this line isn't needed
-    wire B_is_underflowed = B_exponent_is_min && B_f != 0; // lets just flush to zero so this line isn't needed
+    // wire A_is_underflowed = A_exponent_is_min && A_f != 0; // lets just flush to zero so this line isn't needed
+    // wire B_is_underflowed = B_exponent_is_min && B_f != 0; // lets just flush to zero so this line isn't needed
 
     // Special cases checks in parallel
     wire should_return_inf = (A_is_inf && !B_is_zero) || (B_is_inf && !A_is_zero);
@@ -41,8 +41,8 @@ module Mul (
 
     // Math
     wire [(MANTISSA+1)*2-1:0] pre_prod_frac;
-    // assign pre_prod_frac = {1'b1, A_f} * {1'b1, B_f};
-    assign pre_prod_frac = {A_is_underflowed ? 1'b0 : 1'b1, A_f} * {B_is_underflowed ? 1'b0 : 1'b1, B_f}; // on fp32 checking for underflows costs us 20 LUTs. I didn't even try normalizing the number after.
+    assign pre_prod_frac = {1'b1, A_f} * {1'b1, B_f};
+    // assign pre_prod_frac = {A_is_underflowed ? 1'b0 : 1'b1, A_f} * {B_is_underflowed ? 1'b0 : 1'b1, B_f}; // In vivado default synth/impl, on fp32 checking for underflows costs us 20 LUTs and on cherry float 9 LUTs. I didn't even try normalizing the number after.
 
     wire [EXPONENT:0] pre_prod_exp;
     assign pre_prod_exp = A_e + B_e;
