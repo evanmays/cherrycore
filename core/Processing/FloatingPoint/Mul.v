@@ -20,7 +20,7 @@ module Mul (
     assign A_e = A[WIDTH-2:MANTISSA];
     assign B_e = B[WIDTH-2:MANTISSA];
     assign A_f = A[MANTISSA-1:0]; 
-    assign B_f = A[MANTISSA-1:0]; 
+    assign B_f = B[MANTISSA-1:0];
     wire A_exponent_is_max = A_e == {EXPONENT{1'b1}}; // A_e == {1'b0,{(EXPONENT-1){1'b1}}};
     wire B_exponent_is_max = B_e == {EXPONENT{1'b1}}; // B_e == {1'b0,{(EXPONENT-1){1'b1}}};
     wire A_exponent_is_min = A_e == {EXPONENT{1'b0}}; // A_e == {EXPONENT{1'b1}};
@@ -42,7 +42,7 @@ module Mul (
     // Math
     wire [(MANTISSA+1)*2-1:0] pre_prod_frac;
     // assign pre_prod_frac = {1'b1, A_f} * {1'b1, B_f};
-    assign pre_prod_frac = {A_is_underflowed ? 1'b0 : 1'b1, A[MANTISSA-1:0]} * {B_is_underflowed ? 1'b0 : 1'b1, B[MANTISSA-1:0]}; // on fp32 checking for underflows costs us 20 LUTs. I didn't even try normalizing the number after.
+    assign pre_prod_frac = {A_is_underflowed ? 1'b0 : 1'b1, A_f} * {B_is_underflowed ? 1'b0 : 1'b1, B_f}; // on fp32 checking for underflows costs us 20 LUTs. I didn't even try normalizing the number after.
 
     wire [EXPONENT:0] pre_prod_exp;
     assign pre_prod_exp = A_e + B_e;
