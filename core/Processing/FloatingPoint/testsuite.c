@@ -56,12 +56,7 @@ void basic_test_tf32(void) {
   }
 }
 
-int main(void) {
-  fesetenv(FE_DFL_DISABLE_SSE_DENORMS_ENV);
-  //basic_test_tf32();
-  printsuccess("basic_test_tf32");
-
-
+void infinity_test_all(void) {
   assertEqualFloats(
     0,
     hardwareMul(INFINITY, -20.0, TF32),
@@ -69,6 +64,53 @@ int main(void) {
     (char *)__func__,
     TF32
   );
-  
+  assertEqualFloats(
+    0,
+    hardwareMul(INFINITY, -20.0, BF16),
+    INFINITY * -20.0,
+    (char *)__func__,
+    BF16
+  );
+  assertEqualFloats(
+    0,
+    hardwareMul(INFINITY, -20.0, CHERRY_FLOAT),
+    INFINITY * -20.0,
+    (char *)__func__,
+    CHERRY_FLOAT
+  );
+}
+
+void nan_test_all(void) {
+  assertEqualFloats(
+    0,
+    hardwareMul(NAN, -20.0, TF32),
+    NAN * -20.0,
+    (char *)__func__,
+    TF32
+  );
+  assertEqualFloats(
+    0,
+    hardwareMul(NAN, -20.0, BF16),
+    NAN * -20.0,
+    (char *)__func__,
+    BF16
+  );
+  assertEqualFloats(
+    0,
+    hardwareMul(NAN, -20.0, CHERRY_FLOAT),
+    NAN * -20.0,
+    (char *)__func__,
+    CHERRY_FLOAT
+  );
+}
+
+int main(void) {
+  fesetenv(FE_DFL_DISABLE_SSE_DENORMS_ENV);
+  basic_test_tf32();
+  printsuccess("basic_test_tf32");
+  infinity_test_all();
+  printsuccess("infinity_test_all");
+  nan_test_all();
+  printsuccess("nan_test_all");
   return 0;
 }
