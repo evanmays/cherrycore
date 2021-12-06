@@ -68,6 +68,17 @@ else
     echo "OK testsuite execution completed successfully ^^"
 fi
 
+# Float multiply test
+cd core/Processing/FloatingPoint
+./test.sh
+cd ../../../
+if [[ $ret != 0 ]]; then
+    echo "Execution failed but should not..."
+    exit 1
+else
+    echo "OK testsuite execution completed successfully ^^"
+fi
+
 # Add more testsuites here
 
 echo "Regression finished successfully. SVUT sounds alive ^^"
