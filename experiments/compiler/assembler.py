@@ -51,8 +51,8 @@ def get_processing_category(op):
 
 def bit_pack_unop_instruction(op: UnaryOps):
     return pack('uint:2, uint:3, uint:2, uint:9', _Category.PROCESSING, get_processing_category(op), op, 0)
-def bit_pack_binop_instruction(op: BinaryOps):
-    return pack('uint:2, uint:3, uint:3, uint:8', _Category.PROCESSING, get_processing_category(op), op, 0)
+def bit_pack_binop_instruction(op: BinaryOps, use_acc: bool):
+    return pack('uint:2, uint:3, uint:3, uint:1, uint:7', _Category.PROCESSING, get_processing_category(op), op, use_acc 0)
 def bit_pack_matmul_instruction():
     return pack('uint:2, uint:3, uint:11', _Category.PROCESSING, get_processing_category("matmul"), 0)
 def bit_pack_mulacc_instruction():
