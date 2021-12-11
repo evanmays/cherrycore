@@ -23,18 +23,20 @@ reg [17:0] stage_3_dat;
 always @(posedge clk) begin
   if (!freeze) begin
     //
-    // Stage 1: Read register
+    // Stage 1: Initiate Read register
     //
     instr_1 <= instr;
     if (instr.valid) regfile_read_addr <= instr.reg_in; // TODO: add thread here
 
-    // wait
+    //
+    // Stage 2: Allow Regfile to do the Read
+    //
     instr_2 <= instr_1;
 
 
 
     //
-    // Stage 2: Execute
+    // Stage 3: Execute
     //
     instr_3 <= instr_2;
     if (instr_2.valid) begin
@@ -42,7 +44,7 @@ always @(posedge clk) begin
     end
 
     //
-    // Stage 3: Writeback
+    // Stage 4: Writeback
     //
     regfile_we <= instr_3.valid;
     regfile_dat_w <= stage_3_dat;

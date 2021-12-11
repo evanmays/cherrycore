@@ -1,7 +1,7 @@
 
 // I look at https://github.com/dawsonjon/fpu/blob/master/multiplier/multiplier.v
 // I make combinatorial and parameterize
-// Still need denorm and norm?
+// It's like 250MHz if you clock it with just one stage!
 module Mul (
     input      [WIDTH-1:0] A, B,
     output     [WIDTH-1:0] OUT
