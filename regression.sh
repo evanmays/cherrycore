@@ -79,6 +79,22 @@ else
     echo "OK testsuite execution completed successfully ^^"
 fi
 
+
+# Float Group Sum Test Suite
+cd core/Processing/FloatingPoint
+"svutRun" -test "GroupSum_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
+rm icarus.out log
+cd ../../
+ret=$?
+
+if [[ $ret != 0 ]]; then
+    echo "Execution failed but should not..."
+    exit 1
+else
+    echo "OK testsuite execution completed successfully ^^"
+fi
+
+
 # Add more testsuites here
 
 echo "Regression finished successfully. SVUT sounds alive ^^"
