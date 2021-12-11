@@ -1,3 +1,4 @@
+# Source of truth for bit packing Cherry Instruction Set
 from functools import cache
 from bitstring import pack, BitArray
 from enum import IntEnum
@@ -24,18 +25,43 @@ class UnaryOps(IntEnum):
   LOG = 2
   GT0 = 3
 
+class BinaryOps(IntEnum):
+  ADD = 0
+  SUB = 1
+  MUL = 2
+  DIV = 3
+  MULACC = 4
+  POW = 5
+
+class ReduceOps(IntEnum):
+  SUM = 0
+  MAX = 1
+
 def get_processing_category(op):
     if type(op) == UnaryOps:
         return 0
+    if type(op) == BinaryOps:
+        return 1
+    if op == "matmul":
+        return 2
+    if op == "mulacc":
+        return 3
+    if type(op) == ReduceOps:
+        return 4
+
 def bit_pack_unop_instruction(op: UnaryOps):
-    return pack('uint:2, uint:2, uint:2, uint:10', _Category.PROCESSING, get_processing_category(op), op, 0)
-def bit_pack_binop_instruction():
-    raise NotImplementedError
+    return pack('uint:2, uint:3, uint:2, uint:9', _Category.PROCESSING, get_processing_category(op), op, 0)
+def bit_pack_binop_instruction(op: BinaryOps):
+    return pack('uint:2, uint:3, uint:3, uint:8', _Category.PROCESSING, get_processing_category(op), op, 0)
 def bit_pack_matmul_instruction():
-    raise NotImplementedError
+    return pack('uint:2, uint:3, uint:11', _Category.PROCESSING, get_processing_category("matmul"), 0)
 def bit_pack_mulacc_instruction():
+    return pack('uint:2, uint:3, uint:11', _Category.PROCESSING, get_processing_category("mulacc"), 0)
+def bit_pack_reduce_instruction(op: ReduceOps, use_acc: bool, axis: int, count: int):
+    return pack('uint:2, uint:3, uint:1, uint:1, uint:2, uint:2, uint:5', _Category.PROCESSING, get_processing_category(op), op, use_acc, axis, count, 0)
+def bit_pack_copy_acc_to_output():
     raise NotImplementedError
-def bit_pack_reduce_instruction():
+def bit_pack_zero_acc():
     raise NotImplementedError
 def bit_pack_loop_instruction(is_start_loop: bool, is_independent: bool = None, loop_address: int = None):
     assert is_start_loop is not None and type(is_start_loop) == bool
