@@ -139,13 +139,11 @@ always @(posedge clk) begin
   //{in_ld_st_instr, cache_addr, d_cache_addr}
   out_cache_instr.valid <= cache_varray_dat_r[0];
 
-  $display("Add %b", cache_varray_dat_r);
   out_cache_instr.is_load <= cache_varray_dat_r[1];
   out_cache_instr.cache_slot <= cache_varray_dat_r[2:3];
   out_cache_instr.regfile_reg <= cache_varray_dat_r[4:5];
   // out_cache_instr.zero_flag <= cache_varray_dat_r[6]; // TODO
   // out_cache_instr.skip_flag <= cache_varray_dat_r[7]; // TODO
-  $display("%d", cache_varray_is_new_superscalar_group);
   if (cache_varray_is_new_superscalar_group)
     out_cache_instr.cache_addr <= cache_varray_dat_r[8 +: 11];
   else
@@ -154,7 +152,7 @@ always @(posedge clk) begin
   // DMA Instruction Out
   out_dma_instr.valid <= dma_varray_dat_r[0];
   out_dma_instr.mem_we <= dma_varray_dat_r[1];
-  out_dma_instr.cache_slot <= dma_varray_dat_r[16:17];
+  out_dma_instr.cache_slot <= dma_varray_dat_r[38:39];
   if (dma_varray_is_new_superscalar_group) begin
     out_dma_instr.main_mem_addr <= dma_varray_dat_r[2 +: 7];
     out_dma_instr.cache_addr    <= dma_varray_dat_r[16 +: 11];

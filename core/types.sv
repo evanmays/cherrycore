@@ -33,6 +33,8 @@ typedef struct packed {
   logic [1:0]   cache_slot;
   logic [10:0]  cache_addr;
   logic [1:0]   regfile_reg;
+  // logic         zero_flag; // TODO
+  // logic         skip_flag; // TODO
 } regfile_instruction;
 
 //

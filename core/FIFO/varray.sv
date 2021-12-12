@@ -19,7 +19,7 @@ parameter VIRTUAL_ADDR_BITS = 16;
 
 localparam LOG_QUEUE_LENGTH = 6;
 localparam QUEUE_LENGTH = (1 << LOG_QUEUE_LENGTH);
-logic [15:0]  mem_varr_pos_start [0:QUEUE_LENGTH-1];
+logic [VIRTUAL_ADDR_BITS-1:0]  mem_varr_pos_start [0:QUEUE_LENGTH-1];
 logic [4:0]   mem_varr_pos_end_offset [0:QUEUE_LENGTH-1];
 logic [0:VIRTUAL_ELEMENT_WIDTH-1]  mem_varr_dat [0:QUEUE_LENGTH-1];
 logic [LOG_QUEUE_LENGTH-1:0] head, tail;
@@ -32,7 +32,6 @@ always @(posedge clk) begin
     is_new_superscalar_group <= 1;
   end else begin
     if (we) begin
-      $display("in %b", dat_w);
       mem_varr_pos_start[head]      <= write_addr;
       mem_varr_pos_end_offset[head] <= write_addr_len;
       mem_varr_dat[head]            <= dat_w;
@@ -41,12 +40,12 @@ always @(posedge clk) begin
       varray_len <= write_addr + write_addr_len;
     end
     if (re) begin
-      $display("readaddr %d", read_addr);
       // assert (read_addr < varray_len);
       is_new_superscalar_group <= 0;
       if (no_read)
         is_new_superscalar_group <= 1;
-      if (read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) begin
+      if (queue_size != 0 && read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) begin // how does this behave when value at memory location tail is X
+        
         tail <= tail + 1;
         is_new_superscalar_group <= 1;
       end

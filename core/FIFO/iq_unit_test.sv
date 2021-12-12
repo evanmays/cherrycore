@@ -92,7 +92,6 @@ module instruction_queue_testbench();
         we = 0;
         repeat(32) begin
             @(posedge clk); #1
-            $display("%b", out_math_instr);
             `ASSERT((out_math_instr === 10'b1000110000));
         end
 
@@ -116,7 +115,7 @@ module instruction_queue_testbench();
         in_ram_instr = {1'b0, INPUT_CACHE_SLOT}; // RAM to slot 0
         cache_addr = 0;
         d_cache_addr = 1;
-        main_mem_addr = 32;
+        main_mem_addr = 16;
         d_main_mem_addr = 4;
         @(posedge clk);#1
 
@@ -140,44 +139,65 @@ module instruction_queue_testbench();
         in_ram_instr = {1'b1, OUTPUT_CACHE_SLOT}; // slot 1 to RAM
         cache_addr = 0;
         d_cache_addr = 1;
-        main_mem_addr = 64;
+        main_mem_addr = 112;
         d_main_mem_addr = 1;
         @(posedge clk);#1
         re = 1;
         we = 0;
-        // read 0
-        @(posedge clk); #1
-        `ASSERT((out_dma_instr.valid === 1'b1));
-        `ASSERT((out_dma_instr.mem_we === 1'b0));
-        `ASSERT((out_dma_instr.main_mem_addr === 7'd32));
-        `ASSERT((out_dma_instr.cache_slot === INPUT_CACHE_SLOT));
-        `ASSERT((out_dma_instr.cache_addr === 0));
-        `ASSERT((out_cache_instr.valid === 1'b0));
-        `ASSERT((out_math_instr.valid === 1'b0));
 
-        // read 1
-        @(posedge clk); #1
-        `ASSERT((out_dma_instr.valid === 1'b1));
-        `ASSERT((out_dma_instr.mem_we === 1'b0));
-        `ASSERT((out_dma_instr.main_mem_addr === 7'd36));
-        `ASSERT((out_dma_instr.cache_slot === INPUT_CACHE_SLOT));
-        `ASSERT((out_dma_instr.cache_addr === 1));
-        `ASSERT((out_cache_instr.valid === 1'b0));
-        `ASSERT((out_math_instr.valid === 1'b0));
+        for (int i = 0; i < 64; i = i + 1) begin
+            @(posedge clk); #1
+            // DMA
+            if (i < 16) begin
+                `ASSERT((out_dma_instr.valid === 1'b1));
+                `ASSERT((out_dma_instr.mem_we === 1'b0));
+                `ASSERT((out_dma_instr.main_mem_addr === (7'd16 + i * 7'd4)));
+                `ASSERT((out_dma_instr.cache_slot === INPUT_CACHE_SLOT));
+                `ASSERT((out_dma_instr.cache_addr === i));
+            end else if (i < 21) begin
+                `ASSERT((out_dma_instr.valid === 1'b0));
+            end else if (i < 21 + 16) begin
+                `ASSERT((out_dma_instr.valid === 1'b1));
+                `ASSERT((out_dma_instr.mem_we === 1'b1));
+                `ASSERT((out_dma_instr.main_mem_addr === (7'd112 + (i-21) * 7'd1)));
+                `ASSERT((out_dma_instr.cache_slot === OUTPUT_CACHE_SLOT));
+                `ASSERT((out_dma_instr.cache_addr === (i-21)));
+            end else begin
+                `ASSERT((out_dma_instr.valid === 1'b0));
+            end
 
-        // read 2
-        @(posedge clk); #1
-        `ASSERT((out_dma_instr.valid === 1'b1));
-        `ASSERT((out_dma_instr.mem_we === 1'b0));
-        `ASSERT((out_dma_instr.main_mem_addr === 7'd40));
-        `ASSERT((out_dma_instr.cache_slot === INPUT_CACHE_SLOT));
-        `ASSERT((out_dma_instr.cache_addr === 2));
-        `ASSERT((out_cache_instr.valid === 1'b1));
-        `ASSERT((out_cache_instr.is_load === 1'b1));
-        `ASSERT((out_cache_instr.cache_slot === INPUT_CACHE_SLOT));
-        `ASSERT((out_cache_instr.cache_addr === 11'd0));
-        `ASSERT((out_cache_instr.regfile_reg === INPUT_REG));
-        `ASSERT((out_math_instr.valid === 1'b0));
+            // CACHE
+            if (i < 2) begin
+                `ASSERT((out_cache_instr.valid === 1'b0));
+            end else if (i < 2 + 16) begin
+                `ASSERT((out_cache_instr.valid === 1'b1));
+                `ASSERT((out_cache_instr.is_load === 1'b1));
+                `ASSERT((out_cache_instr.cache_slot === INPUT_CACHE_SLOT));
+                `ASSERT((out_cache_instr.cache_addr === (i - 2)));
+                `ASSERT((out_cache_instr.regfile_reg === INPUT_REG));
+            end else if (i < 2 + 16*2) begin
+                `ASSERT((out_cache_instr.valid === 1'b1));
+                `ASSERT((out_cache_instr.is_load === 1'b0));
+                `ASSERT((out_cache_instr.cache_slot === OUTPUT_CACHE_SLOT));
+                `ASSERT((out_cache_instr.cache_addr === (i - (2+16))));
+                `ASSERT((out_cache_instr.regfile_reg === OUTPUT_REG));
+            end else begin
+                `ASSERT((out_cache_instr.valid === 1'b0));
+            end
+
+            // MATH
+            if (i < 5) begin
+                `ASSERT((out_math_instr.valid === 1'b0));
+            end else if (i < 5 + 16) begin
+                `ASSERT((out_math_instr.valid === 1'b1));
+                `ASSERT((out_math_instr.category === 3'd0));
+                `ASSERT((out_math_instr.options === 6'b110000));
+            end else begin
+                // $display("%b %d %d", out_math_instr, dut.math_varray.head, dut.math_varray.tail);
+                `ASSERT((out_math_instr.valid === 1'b0));
+            end
+
+        end
 
 
         // @(posedge clk); #1
@@ -186,9 +206,9 @@ module instruction_queue_testbench();
 
     `TEST_SUITE_END
 
-    parameter INPUT_CACHE_SLOT = 2'd0;
-        parameter OUTPUT_CACHE_SLOT = 2'd1;
-        parameter INPUT_REG = 2'd0;
-        parameter OUTPUT_REG = 2'd2;
+    parameter INPUT_CACHE_SLOT = 2'd1;
+    parameter OUTPUT_CACHE_SLOT = 2'd2;
+    parameter INPUT_REG = 2'd0;
+    parameter OUTPUT_REG = 2'd2;
 
 endmodule
