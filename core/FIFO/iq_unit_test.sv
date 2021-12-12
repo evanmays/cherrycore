@@ -19,7 +19,7 @@ module instruction_queue_testbench();
     logic                  empty;
     logic                                   we;
     logic [1:0]                             in_instr_type;
-    logic [LOG_SUPERSCALAR_WIDTH-1:0]       copy_count;
+    logic [LOG_SUPERSCALAR_WIDTH:0]       copy_count;
     logic [17:0]                            cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr;
     logic [0:9]                             in_arith_instr;
     logic [0:8]                             in_ram_instr;
@@ -70,41 +70,31 @@ module instruction_queue_testbench();
 
     `TEST_SUITE("SUITE_NAME")
 
-    ///    Available macros:"
-    ///
-    ///    - `MSG("message"):       Print a raw white message
-    ///    - `INFO("message"):      Print a blue message with INFO: prefix
-    ///    - `SUCCESS("message"):   Print a green message if SUCCESS: prefix
-    ///    - `WARNING("message"):   Print an orange message with WARNING: prefix and increment warning counter
-    ///    - `CRITICAL("message"):  Print a purple message with CRITICAL: prefix and increment critical counter 
-    ///    - `ERROR("message"):     Print a red message with ERROR: prefix and increment error counter
-    ///
-    ///    - `FAIL_IF(aSignal):                 Increment error counter if evaluaton is true
-    ///    - `FAIL_IF_NOT(aSignal):             Increment error coutner if evaluation is false
-    ///    - `FAIL_IF_EQUAL(aSignal, 23):       Increment error counter if evaluation is equal
-    ///    - `FAIL_IF_NOT_EQUAL(aSignal, 45):   Increment error counter if evaluation is not equal
-    ///    - `ASSERT(aSignal):                  Increment error counter if evaluation is not true
-    ///    - `ASSERT((aSignal == 0)):           Increment error counter if evaluation is not true
-    ///
-    ///    Available flag:
-    ///
-    ///    - `LAST_STATUS: tied to 1 is last macro did experience a failure, else tied to 0
-
-    `UNIT_TEST("TEST_NAME")
+    `UNIT_TEST("SIMPLE_TEST")
         reset = 1;
         @(posedge clk); #1
         reset = 0;
         re = 1;
         @(posedge clk); #1
+        `ASSERT((dut.varray_read_pos === 1));
         re = 0;
         `ASSERT((out_math_instr === 0));
         we = 1;
         in_instr_type = INSTR_TYPE_ARITHMETIC;
-        copy_count = 15; // really means 16
-        in_arith_instr = 16'h8000; // relu
+        copy_count = 16;
+        in_arith_instr = 16'h8600; // gt0 (first 6 bits will get chopped)
+        `ASSERT((dut.next_free_spot_in_varray[INSTR_TYPE_ARITHMETIC] === 0));
+        @(posedge clk);#1
+        `ASSERT((dut.next_free_spot_in_varray[INSTR_TYPE_ARITHMETIC] === 17));
         @(posedge clk); #1
-    
-
+        re = 1;
+        we = 0;
+        repeat(32) begin
+            @(posedge clk); #1
+            `ASSERT((out_math_instr === 10'h200));
+        end
+        @(posedge clk); #1
+        `ASSERT((out_math_instr === 0));
     `UNIT_TEST_END
 
     `TEST_SUITE_END

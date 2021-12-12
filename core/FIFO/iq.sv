@@ -21,7 +21,7 @@ module instruction_queue (
   // Push
   input logic                                   we,
   input logic [1:0]                             in_instr_type,
-  input logic [LOG_SUPERSCALAR_WIDTH-1:0]       copy_count,
+  input logic [LOG_SUPERSCALAR_WIDTH:0]         copy_count,
   input logic [17:0]                            cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
   input logic [0:9]                             in_arith_instr,
   input logic [0:8]                             in_ram_instr,
@@ -30,7 +30,7 @@ module instruction_queue (
 );
 
 localparam [3:0] LOG_SUPERSCALAR_WIDTH = 4;
-localparam [3:0] SUPERSCALAR_WIDTH = 16;
+localparam [4:0] SUPERSCALAR_WIDTH = 16;
 localparam [3:0] DMA_INSTRUCTION_LATENCY = 2;
 localparam REGFILE_INSTRUCTION_LATENCY = 3;
 localparam ARITH_INSTRUCTION_LATENCY = 10;
@@ -98,7 +98,7 @@ reg varray_we [0:2];
 //   .clk(clk),
 //   .reset(reset),
 
-//   .we(in_instr_type == INSTR_TYPE_LOAD_STORE),
+//   .we(we && in_instr_type == INSTR_TYPE_LOAD_STORE),
 //   .write_addr(insert_varray_pos),
 //   .write_addr_len(copy_count),
 //   .dat_w({in_ld_st_instr, cache_addr, d_cache_addr}),
@@ -111,7 +111,7 @@ reg varray_we [0:2];
 //   .clk(clk),
 //   .reset(reset),
 
-//   .we(in_instr_type == INSTR_TYPE_RAM),
+//   .we(we && in_instr_type == INSTR_TYPE_RAM),
 //   .write_addr(insert_varray_pos),
 //   .write_addr_len(copy_count),
 //   .dat_w({in_ram_instr, main_mem_addr, d_main_mem_addr}),
@@ -121,11 +121,11 @@ reg varray_we [0:2];
 //   .dat_r(out_dma_instr)
 // );
 
-varray #(.VIRTUAL_ELEMENT_WIDTH(10)) arith_varray (
+varray #(.VIRTUAL_ELEMENT_WIDTH(10)) math_varray (
   .clk(clk),
   .reset(reset),
 
-  .we(in_instr_type == INSTR_TYPE_ARITHMETIC),
+  .we(we && in_instr_type == INSTR_TYPE_ARITHMETIC),
   .write_addr(insert_varray_pos),
   .write_addr_len(copy_count),
   .dat_w(in_arith_instr),

@@ -17,7 +17,7 @@ module varray_testbench();
     reg reset;
     reg we;
     reg [VIRTUAL_ADDR_BITS-1:0] write_addr;
-    reg [3:0] write_addr_len;
+    reg [4:0] write_addr_len;
     reg [VIRTUAL_ELEMENT_WIDTH-1:0] dat_w;
     reg re;
     reg [VIRTUAL_ADDR_BITS-1:0] read_addr;
@@ -105,14 +105,18 @@ module varray_testbench();
         @(posedge clk); #1
         `ASSERT((dat_r === 4'd6));
         `ASSERT((varray_len === 13));
-        
+        @(posedge clk); #1
+        `ASSERT((dat_r === 0));
+        `ASSERT((varray_len === 13));
+        @(posedge clk); #1
+        `ASSERT((dat_r === 0));
+        `ASSERT((varray_len === 13));
 
     `UNIT_TEST_END
     `UNIT_TEST("READEMPTY")
         we = 0;
         re = 1;
         @(posedge clk); #1
-        $display("waht %x", dat_r);
         `ASSERT((dat_r === 0));
     `UNIT_TEST_END
 
