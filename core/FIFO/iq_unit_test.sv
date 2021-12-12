@@ -97,7 +97,6 @@ module instruction_queue_testbench();
         re = 1;
         @(posedge clk); #1
         re = 0;
-        @(posedge clk); #1
         `ASSERT((out_math_instr === 0));
         we = 1;
         in_instr_type = INSTR_TYPE_ARITHMETIC;

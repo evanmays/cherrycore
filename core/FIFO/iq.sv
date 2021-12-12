@@ -5,6 +5,8 @@
 // When the virtual arrays are full. we need to refresh our position in the virtual array
 // the virtual arrays are so sparse and we only do accesses in montoonically increasing so we use a queue to represent them
 // No BRAMs, just distirbuted ram. Under 200 LUT.
+
+// One cycle latency for all output ports.
 module instruction_queue (
   input                         reset,
   input                         clk,
@@ -58,21 +60,13 @@ always @(posedge clk) begin
     varray_pos_when_done[INSTR_TYPE_ARITHMETIC] <= 0;
     varray_read_pos <= 0;
   end else begin
-    varray_we[INSTR_TYPE_LOAD_STORE]  <= 0;
-    varray_we[INSTR_TYPE_RAM]         <= 0;
-    varray_we[INSTR_TYPE_ARITHMETIC]  <= 0;
     if (we) begin
       varray_pos_when_done[in_instr_type] <= insert_varray_pos + latency(in_instr_type);
       next_free_spot_in_varray[in_instr_type] <= insert_varray_pos + SUPERSCALAR_WIDTH; // would be better if this is + copy_count?
       prev_instr_type <= in_instr_type;
-      varray_we[in_instr_type] <= 1;
     end
-
-    varray_re <= 0;
-    if (re) begin
+    if (re)
       varray_read_pos <= varray_read_pos + 1;
-      varray_re <= 1;
-    end
   end
 end
 function [VARRAY_POS_BITS-1:0] max;
@@ -100,17 +94,16 @@ function [3:0] latency;
 endfunction
 
 reg varray_we [0:2];
-reg varray_re;
 // varray #(.VIRTUAL_ELEMENT_WIDTH(0)) cache_varray (
 //   .clk(clk),
 //   .reset(reset),
 
-//   .we(varray_we[INSTR_TYPE_LOAD_STORE]),
+//   .we(in_instr_type == INSTR_TYPE_LOAD_STORE),
 //   .write_addr(insert_varray_pos),
 //   .write_addr_len(copy_count),
 //   .dat_w({in_ld_st_instr, cache_addr, d_cache_addr}),
 
-//   .re(varray_re),
+//   .re(re),
 //   .read_addr(varray_read_pos),
 //   .dat_r(out_cache_instr)
 // );
@@ -118,12 +111,12 @@ reg varray_re;
 //   .clk(clk),
 //   .reset(reset),
 
-//   .we(varray_we[INSTR_TYPE_RAM]),
+//   .we(in_instr_type == INSTR_TYPE_RAM),
 //   .write_addr(insert_varray_pos),
 //   .write_addr_len(copy_count),
 //   .dat_w({in_ram_instr, main_mem_addr, d_main_mem_addr}),
 
-//   .re(varray_re),
+//   .re(re),
 //   .read_addr(varray_read_pos),
 //   .dat_r(out_dma_instr)
 // );
@@ -132,12 +125,12 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(10)) arith_varray (
   .clk(clk),
   .reset(reset),
 
-  .we(varray_we[INSTR_TYPE_ARITHMETIC]),
+  .we(in_instr_type == INSTR_TYPE_ARITHMETIC),
   .write_addr(insert_varray_pos),
   .write_addr_len(copy_count),
   .dat_w(in_arith_instr),
 
-  .re(varray_re),
+  .re(re),
   .read_addr(varray_read_pos),
   .dat_r(out_math_instr)
 );
