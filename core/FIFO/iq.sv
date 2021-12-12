@@ -22,10 +22,11 @@ module instruction_queue (
   input logic                                   we,
   input logic [1:0]                             in_instr_type,
   input logic [LOG_SUPERSCALAR_WIDTH:0]         copy_count,
-  input logic [17:0]                            cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
-  input logic [0:9]                             in_arith_instr,
-  input logic [0:8]                             in_ram_instr,
-  input logic [0:9]                             in_ld_st_instr,
+  input logic [10:0]                            cache_addr, d_cache_addr,
+  input logic [6:0]                             main_mem_addr, d_main_mem_addr,
+  input logic [0:8]                             in_arith_instr,
+  input logic [0:2]                             in_ram_instr,
+  input logic [0:6]                             in_ld_st_instr,
   output logic                                  needs_reset
 );
 
@@ -93,34 +94,83 @@ function [3:0] latency;
   end
 endfunction
 
-reg varray_we [0:2];
-// varray #(.VIRTUAL_ELEMENT_WIDTH(0)) cache_varray (
-//   .clk(clk),
-//   .reset(reset),
 
-//   .we(we && in_instr_type == INSTR_TYPE_LOAD_STORE),
-//   .write_addr(insert_varray_pos),
-//   .write_addr_len(copy_count),
-//   .dat_w({in_ld_st_instr, cache_addr, d_cache_addr}),
+wire [0:29] cache_varray_dat_r;
+wire        cache_varray_is_new_superscalar_group;
+varray #(.VIRTUAL_ELEMENT_WIDTH(30)) cache_varray (
+  .clk(clk),
+  .reset(reset),
 
-//   .re(re),
-//   .read_addr(varray_read_pos),
-//   .dat_r(out_cache_instr)
-// );
-// varray #(.VIRTUAL_ELEMENT_WIDTH(0)) dma_varray (
-//   .clk(clk),
-//   .reset(reset),
+  .we(we && in_instr_type == INSTR_TYPE_LOAD_STORE),
+  .write_addr(insert_varray_pos),
+  .write_addr_len(copy_count),
+  .dat_w({1'b1, in_ld_st_instr, cache_addr, d_cache_addr}),
 
-//   .we(we && in_instr_type == INSTR_TYPE_RAM),
-//   .write_addr(insert_varray_pos),
-//   .write_addr_len(copy_count),
-//   .dat_w({in_ram_instr, main_mem_addr, d_main_mem_addr}),
+  .re(re),
+  .read_addr(varray_read_pos),
+  .dat_r(cache_varray_dat_r),
+  .is_new_superscalar_group(cache_varray_is_new_superscalar_group)
+);
 
-//   .re(re),
-//   .read_addr(varray_read_pos),
-//   .dat_r(out_dma_instr)
-// );
+wire [0:39] dma_varray_dat_r;
+wire        dma_varray_is_new_superscalar_group;
+varray #(.VIRTUAL_ELEMENT_WIDTH(40)) dma_varray (
+  .clk(clk),
+  .reset(reset),
 
+  .we(we && in_instr_type == INSTR_TYPE_RAM),
+  .write_addr(insert_varray_pos),
+  .write_addr_len(copy_count),
+  .dat_w({1'b1, in_ram_instr[0], main_mem_addr, d_main_mem_addr, cache_addr, d_cache_addr, in_ram_instr[1:2]}),
+
+  .re(re),
+  .read_addr(varray_read_pos),
+  .dat_r(dma_varray_dat_r),
+  .is_new_superscalar_group(dma_varray_is_new_superscalar_group)
+);
+
+// Do some post processing on the varray elements
+// to reconstruct the actual addresses
+always @(posedge clk) begin
+  // Math Instruction Out
+  out_math_instr <= math_varray_dat_r;
+
+  // Cache Instruction Out
+  //{in_ld_st_instr, cache_addr, d_cache_addr}
+  out_cache_instr.valid <= cache_varray_dat_r[0];
+
+  $display("Add %b", cache_varray_dat_r);
+  out_cache_instr.is_load <= cache_varray_dat_r[1];
+  out_cache_instr.cache_slot <= cache_varray_dat_r[2:3];
+  out_cache_instr.regfile_reg <= cache_varray_dat_r[4:5];
+  // out_cache_instr.zero_flag <= cache_varray_dat_r[6]; // TODO
+  // out_cache_instr.skip_flag <= cache_varray_dat_r[7]; // TODO
+  $display("%d", cache_varray_is_new_superscalar_group);
+  if (cache_varray_is_new_superscalar_group)
+    out_cache_instr.cache_addr <= cache_varray_dat_r[8 +: 11];
+  else
+    out_cache_instr.cache_addr <= out_cache_instr.cache_addr + cache_varray_dat_r[19 +: 11];
+
+  // DMA Instruction Out
+  out_dma_instr.valid <= dma_varray_dat_r[0];
+  out_dma_instr.mem_we <= dma_varray_dat_r[1];
+  out_dma_instr.cache_slot <= dma_varray_dat_r[16:17];
+  if (dma_varray_is_new_superscalar_group) begin
+    out_dma_instr.main_mem_addr <= dma_varray_dat_r[2 +: 7];
+    out_dma_instr.cache_addr    <= dma_varray_dat_r[16 +: 11];
+  end else begin
+    out_dma_instr.main_mem_addr <= out_dma_instr.main_mem_addr + dma_varray_dat_r[9 +: 7];
+    out_dma_instr.cache_addr    <= out_dma_instr.cache_addr + dma_varray_dat_r[27 +: 11];
+  end
+
+  if (reset) begin
+    out_math_instr <= 0;
+    out_dma_instr <= 0;
+    out_cache_instr <= 0;
+  end
+end
+
+wire [0:9] math_varray_dat_r;
 varray #(.VIRTUAL_ELEMENT_WIDTH(10)) math_varray (
   .clk(clk),
   .reset(reset),
@@ -128,11 +178,11 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(10)) math_varray (
   .we(we && in_instr_type == INSTR_TYPE_ARITHMETIC),
   .write_addr(insert_varray_pos),
   .write_addr_len(copy_count),
-  .dat_w(in_arith_instr),
+  .dat_w({1'b1, in_arith_instr}),
 
   .re(re),
   .read_addr(varray_read_pos),
-  .dat_r(out_math_instr)
+  .dat_r(math_varray_dat_r)
 );
 
 endmodule

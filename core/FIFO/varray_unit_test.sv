@@ -67,8 +67,8 @@ module varray_testbench();
     endtask
 
     `TEST_SUITE("SUITE_NAME")
-
-    `UNIT_TEST("TEST_NAME")
+    // BROKEN
+    `UNIT_TEST("BASIC_TEST")
 
         we = 1;
         write_addr = 0;
@@ -78,45 +78,48 @@ module varray_testbench();
         we = 0;
         re = 1;
         read_addr = 0;
-        @(posedge clk); #1
+        #0.5
         `ASSERT((dat_r === 4'd12));
+        @(posedge clk);
         read_addr = 1;
-        @(posedge clk); #1
+        #0.5
+        $display("%d", dat_r);
         `ASSERT((dat_r === 4'd12));
-        `ASSERT((varray_len === 2));
-        read_addr = 2;
-        we = 1;
-        write_addr = 10;
-        write_addr_len = 3;
-        dat_w = 4'd6;
-        @(posedge clk); #1
-        we = 0;
-        `ASSERT((varray_len === 13));
-        @(posedge clk); #1
-        @(posedge clk); #1
-        re = 1;
-        read_addr = 10;
-        @(posedge clk); #1
-        `ASSERT((dat_r === 4'd6));
-        read_addr = 11;
-        @(posedge clk); #1
-        `ASSERT((dat_r === 4'd6));
-        read_addr = 12;
-        @(posedge clk); #1
-        `ASSERT((dat_r === 4'd6));
-        `ASSERT((varray_len === 13));
-        @(posedge clk); #1
-        `ASSERT((dat_r === 0));
-        `ASSERT((varray_len === 13));
-        @(posedge clk); #1
-        `ASSERT((dat_r === 0));
-        `ASSERT((varray_len === 13));
+        // `ASSERT((varray_len === 2));
+        // @(posedge clk);
+        // read_addr = 2;
+        // we = 1;
+        // write_addr = 10;
+        // write_addr_len = 3;
+        // dat_w = 4'd6;
+        // @(posedge clk); #1
+        // we = 0;
+        // `ASSERT((varray_len === 13));
+        // @(posedge clk); #1
+        // @(posedge clk); #1
+        // re = 1;
+        // read_addr = 10;
+        // @(posedge clk); #1
+        // `ASSERT((dat_r === 4'd6));
+        // read_addr = 11;
+        // @(posedge clk); #1
+        // `ASSERT((dat_r === 4'd6));
+        // read_addr = 12;
+        // @(posedge clk); #1
+        // `ASSERT((dat_r === 4'd6));
+        // `ASSERT((varray_len === 13));
+        // @(posedge clk); #1
+        // `ASSERT((dat_r === 0));
+        // `ASSERT((varray_len === 13));
+        // @(posedge clk); #1
+        // `ASSERT((dat_r === 0));
+        // `ASSERT((varray_len === 13));
 
     `UNIT_TEST_END
     `UNIT_TEST("READEMPTY")
         we = 0;
         re = 1;
-        @(posedge clk); #1
+        #1
         `ASSERT((dat_r === 0));
     `UNIT_TEST_END
 
