@@ -79,11 +79,11 @@ module varray_testbench();
         re = 1;
         read_addr = 0;
         @(posedge clk); #1
-        `ASSERT((dat_r == 4'd12));
+        `ASSERT((dat_r === 4'd12));
         read_addr = 1;
         @(posedge clk); #1
-        `ASSERT((dat_r == 4'd12));
-        `ASSERT((varray_len == 2));
+        `ASSERT((dat_r === 4'd12));
+        `ASSERT((varray_len === 2));
         read_addr = 2;
         we = 1;
         write_addr = 10;
@@ -91,22 +91,29 @@ module varray_testbench();
         dat_w = 4'd6;
         @(posedge clk); #1
         we = 0;
-        `ASSERT((varray_len == 13));
+        `ASSERT((varray_len === 13));
         @(posedge clk); #1
         @(posedge clk); #1
         re = 1;
         read_addr = 10;
         @(posedge clk); #1
-        `ASSERT((dat_r == 4'd6));
+        `ASSERT((dat_r === 4'd6));
         read_addr = 11;
         @(posedge clk); #1
-        `ASSERT((dat_r == 4'd6));
+        `ASSERT((dat_r === 4'd6));
         read_addr = 12;
         @(posedge clk); #1
-        `ASSERT((dat_r == 4'd6));
-        `ASSERT((varray_len == 13));
+        `ASSERT((dat_r === 4'd6));
+        `ASSERT((varray_len === 13));
         
 
+    `UNIT_TEST_END
+    `UNIT_TEST("READEMPTY")
+        we = 0;
+        re = 1;
+        @(posedge clk); #1
+        $display("waht %x", dat_r);
+        `ASSERT((dat_r === 0));
     `UNIT_TEST_END
 
     `TEST_SUITE_END

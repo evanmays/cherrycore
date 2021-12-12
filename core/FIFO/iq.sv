@@ -10,21 +10,21 @@ module instruction_queue (
   input                         clk,
 
   // Pop
-  input                         re,
+  input  logic                  re,
   output dma_instruction        out_dma_instr,
   output math_instr             out_math_instr,
   output regfile_instruction    out_cache_instr,
-  output wire                   empty,
+  output logic                   empty,
 
   // Push
-  input                                   we,
-  input [1:0]                           in_instr_type,
-  input [LOG_SUPERSCALAR_WIDTH-1:0]       copy_count,
-  input [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
-  input [0:9] in_arith_instr,
-  input [0:8]  in_ram_instr,
-  input [0:9]  in_ld_st_instr,
-  output logic needs_reset
+  input logic                                   we,
+  input logic [1:0]                             in_instr_type,
+  input logic [LOG_SUPERSCALAR_WIDTH-1:0]       copy_count,
+  input logic [17:0]                            cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
+  input logic [0:9]                             in_arith_instr,
+  input logic [0:8]                             in_ram_instr,
+  input logic [0:9]                             in_ld_st_instr,
+  output logic                                  needs_reset
 );
 
 localparam [3:0] LOG_SUPERSCALAR_WIDTH = 4;
@@ -38,7 +38,11 @@ reg [1:0]  prev_instr_type;
 reg [VARRAY_POS_BITS-1:0] next_free_spot_in_varray [0:2];
 reg [VARRAY_POS_BITS-1:0] varray_pos_when_done [0:2];
 
-wire [VARRAY_POS_BITS-1:0] insert_varray_pos = max(varray_pos_when_done[prev_instr_type], next_free_spot_in_varray[in_instr_type]);
+wire [VARRAY_POS_BITS-1:0] insert_varray_pos = max(
+                                                varray_pos_when_done[prev_instr_type],
+                                                next_free_spot_in_varray[in_instr_type],
+                                                varray_read_pos
+                                              );
 reg [VARRAY_POS_BITS-1:0] varray_read_pos;
 
 assign needs_reset = varray_read_pos == {16{1'b1}};
@@ -54,10 +58,14 @@ always @(posedge clk) begin
     varray_pos_when_done[INSTR_TYPE_ARITHMETIC] <= 0;
     varray_read_pos <= 0;
   end else begin
+    varray_we[INSTR_TYPE_LOAD_STORE]  <= 0;
+    varray_we[INSTR_TYPE_RAM]         <= 0;
+    varray_we[INSTR_TYPE_ARITHMETIC]  <= 0;
     if (we) begin
       varray_pos_when_done[in_instr_type] <= insert_varray_pos + latency(in_instr_type);
       next_free_spot_in_varray[in_instr_type] <= insert_varray_pos + SUPERSCALAR_WIDTH; // would be better if this is + copy_count?
       prev_instr_type <= in_instr_type;
+      varray_we[in_instr_type] <= 1;
     end
 
     varray_re <= 0;
@@ -68,9 +76,9 @@ always @(posedge clk) begin
   end
 end
 function [VARRAY_POS_BITS-1:0] max;
-	input [VARRAY_POS_BITS-1:0] a, b;
+	input [VARRAY_POS_BITS-1:0] a, b, c;
 	begin
-    max = a > b ? a : b;
+    max = a > b ? (a > c ? a : c) : (b > c ? b : c);
 	end
 endfunction
 
@@ -91,39 +99,34 @@ function [3:0] latency;
   end
 endfunction
 
-
-
-reg [16:0] cache_queue [0:SMALL_QUEUE_LENGTH-1];
-reg [21:0] dma_queue [0:SMALL_QUEUE_LENGTH-1];
-reg [33:0]  arith_queue [0:SMALL_QUEUE_LENGTH-1];
 reg varray_we [0:2];
 reg varray_re;
-varray #(.VIRTUAL_ELEMENT_WIDTH(0)) cache_varray (
-  .clk(clk),
-  .reset(reset),
+// varray #(.VIRTUAL_ELEMENT_WIDTH(0)) cache_varray (
+//   .clk(clk),
+//   .reset(reset),
 
-  .we(varray_we[INSTR_TYPE_LOAD_STORE]),
-  .write_addr(insert_varray_pos),
-  .write_addr_len(copy_count),
-  .dat_w({in_ld_st_instr, cache_addr, d_cache_addr}),
+//   .we(varray_we[INSTR_TYPE_LOAD_STORE]),
+//   .write_addr(insert_varray_pos),
+//   .write_addr_len(copy_count),
+//   .dat_w({in_ld_st_instr, cache_addr, d_cache_addr}),
 
-  .re(varray_re),
-  .read_addr(varray_read_pos),
-  .dat_r(out_cache_instr)
-);
-varray #(.VIRTUAL_ELEMENT_WIDTH(0)) dma_varray (
-  .clk(clk),
-  .reset(reset),
+//   .re(varray_re),
+//   .read_addr(varray_read_pos),
+//   .dat_r(out_cache_instr)
+// );
+// varray #(.VIRTUAL_ELEMENT_WIDTH(0)) dma_varray (
+//   .clk(clk),
+//   .reset(reset),
 
-  .we(varray_we[INSTR_TYPE_RAM]),
-  .write_addr(insert_varray_pos),
-  .write_addr_len(copy_count),
-  .dat_w({in_ram_instr, main_mem_addr, d_main_mem_addr}),
+//   .we(varray_we[INSTR_TYPE_RAM]),
+//   .write_addr(insert_varray_pos),
+//   .write_addr_len(copy_count),
+//   .dat_w({in_ram_instr, main_mem_addr, d_main_mem_addr}),
 
-  .re(varray_re),
-  .read_addr(varray_read_pos),
-  .dat_r(out_dma_instr)
-);
+//   .re(varray_re),
+//   .read_addr(varray_read_pos),
+//   .dat_r(out_dma_instr)
+// );
 
 varray #(.VIRTUAL_ELEMENT_WIDTH(10)) arith_varray (
   .clk(clk),

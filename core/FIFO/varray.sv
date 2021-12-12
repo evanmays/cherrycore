@@ -22,7 +22,7 @@ logic [15:0]  mem_varr_pos_start [0:QUEUE_LENGTH-1];
 logic [3:0]   mem_varr_pos_end_offset [0:QUEUE_LENGTH-1];
 logic [13:0]  mem_varr_dat [0:QUEUE_LENGTH-1];
 logic [LOG_QUEUE_LENGTH-1:0] head, tail;
-wire [LOG_QUEUE_LENGTH-1:0] queue_size = head > tail ? head - tail : QUEUE_LENGTH - 1 - tail + head;
+wire [LOG_QUEUE_LENGTH-1:0] queue_size = head >= tail ? head - tail : QUEUE_LENGTH - 1 - tail + head;
 always @(posedge clk) begin
   if (reset) begin
     head <= 0;
@@ -40,15 +40,11 @@ always @(posedge clk) begin
     if (re) begin
       // assert (read_addr < varray_len);
       if (queue_size == 0 || read_addr < mem_varr_pos_start[tail]) begin
-        $display("wtf");
         dat_r <= 0;
       end else begin
-        $display("not as bad");
         dat_r <= mem_varr_dat[tail];
       end
-      $display("readaddr + 1 %d", read_addr + 1);
       if (read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) begin
-        $display("HITS");
         tail <= tail + 1;
       end
     end
