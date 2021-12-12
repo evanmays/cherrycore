@@ -36,10 +36,19 @@ typedef struct packed {
 } regfile_instruction;
 
 //
-// Processing Pipeline Data
+// Processing Pipeline Data (Depracated)
 //
 typedef struct packed {
   logic       valid;
   logic [1:0] reg_in;
   logic [1:0] reg_out;
 } arithmetic_instruction;
+
+//
+// Processing Pipeline Data
+//
+typedef struct packed {
+  logic       valid;
+  logic [2:0] category; // check assembler.py
+  logic [5:0] options;  // format depends on the category
+} math_instr;
