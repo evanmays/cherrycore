@@ -4,7 +4,7 @@
 // Each instruction pipeleine's queue is represented by a virtual array with 65536 elements.
 // When the virtual arrays are full. we need to refresh our position in the virtual array
 // the virtual arrays are so sparse and we only do accesses in montoonically increasing so we use a queue to represent them
-// No BRAMs, just distirbuted ram. Under 200 LUT.
+// Under 500 LUTs
 
 // One cycle latency for all output ports.
 module instruction_queue (

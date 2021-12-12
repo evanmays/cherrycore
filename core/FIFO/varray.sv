@@ -8,7 +8,7 @@ module varray (
   input [VIRTUAL_ADDR_BITS-1:0] write_addr,
   input [4:0] write_addr_len, // writes to arr[write_addr +: write_addr_len]
   input [0:VIRTUAL_ELEMENT_WIDTH-1] dat_w,
-  input re,
+  input logic re,
   input [VIRTUAL_ADDR_BITS-1:0] read_addr,
   output logic [0:VIRTUAL_ELEMENT_WIDTH-1] dat_r,
   output logic [VIRTUAL_ADDR_BITS-1:0] varray_len,
@@ -41,28 +41,23 @@ always @(posedge clk) begin
     end
     if (re) begin
       // assert (read_addr < varray_len);
-      is_new_superscalar_group <= 0;
-      if (no_read)
-        is_new_superscalar_group <= 1;
       if (queue_size != 0 && read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) begin // how does this behave when value at memory location tail is X
-        
         tail <= tail + 1;
-        is_new_superscalar_group <= 1;
       end
+      is_new_superscalar_group <= (read_addr < mem_varr_pos_start[tail] || read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]);
     end
   end
 end
 // Combinatorial so we can do some post procesing before clock period ends in instruction queue module
-logic no_read;
 always @(*)
   if (re) begin
     // assert (read_addr < varray_len);
     if (queue_size == 0 || read_addr < mem_varr_pos_start[tail]) begin // how does this behave in hardware if  mem_varr_pos_start[tail] is X. We have that case to check for when user is reading in between entries. But maybe maybe should be read_addr < varray_len. not sure if that stops propagation or not
-      no_read <= 1;
       dat_r <= 0;
     end else begin
-      no_read <= 0;
       dat_r <= mem_varr_dat[tail];
     end
+  end else begin
+    dat_r <= 0;
   end
 endmodule
