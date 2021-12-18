@@ -132,7 +132,7 @@ always @(posedge clk) begin
         apu_in_di <= -1 * loop_stack_total_iterations[`LOOP_CUR_DEPTH];
         loop_cur_depth <= loop_cur_depth - 1;
       end else begin
-        apu_in_di <= (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
+        apu_in_di <= (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? SUPERSCALAR_WIDTH : 1);
         jump_amount <= loop_stack_jump_amount[`LOOP_CUR_DEPTH];
       end
       S <= UPDATE_APU;
