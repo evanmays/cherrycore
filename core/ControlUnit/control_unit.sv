@@ -37,9 +37,9 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
   output reg         queue_we,
   output reg  [1:0]  queue_instr_type,
-  output reg  [13:0] queue_arith_instr,
-  output reg  [8:0]  queue_ram_instr,
-  output reg  [9:0] queue_ld_st_instr,
+  output reg  [8:0]  queue_arith_instr,
+  output reg  [2:0]  queue_ram_instr, // {is_write, cache_slot}
+  output reg  [6:0]  queue_ld_st_instr, // {is_load, cache_slot, regfile_reg, zero_flag, skip_flag}
 
   output logic program_error
 );
@@ -132,8 +132,7 @@ always @(posedge clk) begin
         apu_in_di <= -1 * loop_stack_total_iterations[`LOOP_CUR_DEPTH];
         loop_cur_depth <= loop_cur_depth - 1;
       end else begin
-        
-        apu_in_di                  <=                         (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
+        apu_in_di <= (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
         jump_amount <= loop_stack_jump_amount[`LOOP_CUR_DEPTH];
       end
       S <= UPDATE_APU;
@@ -164,8 +163,8 @@ always @(posedge clk) begin
       queue_we <= 1;
       queue_instr_type  <= instruction_type;
       queue_arith_instr <= arith_instr;
-      queue_ram_instr   <= ram_instr;
-      queue_ld_st_instr <= ld_st_instr;
+      queue_ram_instr   <= {ram_instr[0], ram_instr[7:8]};
+      queue_ld_st_instr <= {ld_st_instr[0], ld_st_instr[4:9]};
     end
     UPDATE_PC: begin
       queue_we <= 0;
@@ -228,7 +227,7 @@ endfunction
 // Partial Decoder
 //
 wire [1:0] instruction_type = raw_instruction[0:1] == 2'd0 ? INSTR_TYPE_LOAD_STORE : raw_instruction[0:1] == 2'd1 ? INSTR_TYPE_RAM : raw_instruction[0:1] == 2'd2 ? INSTR_TYPE_ARITHMETIC : INSTR_TYPE_LOOP;
-wire [13:0] arith_instr = raw_instruction[2:15];
+wire [8:0] arith_instr = raw_instruction[2:10];
 wire [0:8]  ram_instr   = raw_instruction[2:10]; // 1 bit is_write, 6 bit 2 apus, 2 bits cache slot
 wire [0:9] ld_st_instr = raw_instruction[2:11]; // 1 bit is_load, 3 bit apu, 2 bit cache slot, 2 bit register_target, 1 bit zero_flag, 1 bit skip_flag, fill (TODO add 2 bit height, 2 bit width)
 decoded_loop_instruction loop_instr;
