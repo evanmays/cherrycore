@@ -32,32 +32,83 @@ always @(posedge clk) begin
     is_new_superscalar_group <= 1;
   end else begin
     if (we) begin
+      if (VIRTUAL_ELEMENT_WIDTH==40) $display("Writing to varray at head %d with virtual pos %d and dat %b", head, write_addr, dat_w);
       mem_varr_pos_start[head]      <= write_addr;
       mem_varr_pos_end_offset[head] <= write_addr_len;
       mem_varr_dat[head]            <= dat_w;
 
       head <= head + 1; // % QUEUE_LENGTH
+      // verilator lint_off WIDTH
       varray_len <= write_addr + write_addr_len;
+      // verilator lint_on WIDTH
     end
     if (re) begin
       // assert (read_addr < varray_len);
-      if (queue_size != 0 && read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) begin // how does this behave when value at memory location tail is X
+      // if (VIRTUAL_ELEMENT_WIDTH==40 && re && read_addr >= mem_varr_pos_start[tail] && read_addr < mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) $display("deep %x %x %x %b %b", $past(re), $past(read_addr >= mem_varr_pos_start[tail]), $past(read_addr < mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]), dat_r, $past(dat_r));
+      if (queue_size != 0 && read_addr + 1 == /*verilator lint_off WIDTH */ mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail] /*verilator lint_on WIDTH */) begin // how does this behave when value at memory location tail is X
         tail <= tail + 1;
       end
+      // if (VIRTUAL_ELEMENT_WIDTH==40) $display("read addr %d pos start tail %d", read_addr,  mem_varr_pos_start[tail]);
+      // verilator lint_off WIDTH
       is_new_superscalar_group <= (read_addr < mem_varr_pos_start[tail] || read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]);
+      // verilator lint_on WIDTH
     end
   end
 end
 // Combinatorial so we can do some post procesing before clock period ends in instruction queue module
-always @(*)
-  if (re) begin
-    // assert (read_addr < varray_len);
-    if (queue_size == 0 || read_addr < mem_varr_pos_start[tail]) begin // how does this behave in hardware if  mem_varr_pos_start[tail] is X. We have that case to check for when user is reading in between entries. But maybe maybe should be read_addr < varray_len. not sure if that stops propagation or not
-      dat_r <= 0;
-    end else begin
-      dat_r <= mem_varr_dat[tail];
+// assert ( if re then read_addr < varray_len);
+// verilator lint_off WIDTH
+assign dat_r = (read_addr >= mem_varr_pos_start[tail] && read_addr < mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) ? mem_varr_dat[tail] : 0; // can be invalid if we had recently reset and old data is still in mem_varr_*
+// verilator lint_on WIDTH
+// how does this behave in hardware if  mem_varr_pos_start[tail] is X. We have that case to check for when user is reading in between entries. But maybe maybe should be read_addr < varray_len. not sure if that stops propagation or not
+
+`ifdef FORMAL
+  initial restrict(reset);
+  initial last_read_addr = -1;
+  always @($global_clock) begin
+    restrict(clk == !$past(clk));
+    if (!$rose(clk)) begin
+      assume($stable(reset));
+      assume($stable(we));
+      assume($stable(write_addr));
+      assume($stable(write_addr_len));
+      assume($stable(dat_w));
+      assume($stable(re));
+      assume($stable(read_addr));
     end
-  end else begin
-    dat_r <= 0;
   end
+  reg [15:0] last_write_addr;
+  reg [4:0] last_write_addr_len;
+  initial begin
+    f_past_valid = 1'b0;
+    last_write_addr = 0;
+    last_write_addr_len = 0;
+  end
+  always @(posedge clk) begin
+    assume(write_addr_len > 0 && write_addr_len <= 16);
+  f_past_valid <= 1'b1;
+  if (f_past_valid) begin
+    if ($past(varray_len) > 65535 - 16) begin
+      assume(!we);
+      assume($stable(write_addr));
+      assume($stable(write_addr_len));
+      if (!$past(reset)) assert($stable(varray_len));
+    end
+    if (we) begin
+      assume(write_addr >= last_write_addr + last_write_addr_len);
+      assume(write_addr <= 65535 - 16);
+      last_write_addr <= write_addr;
+      last_write_addr_len <= write_addr_len;
+    end
+    if (re) assume(read_addr >= $past(write_addr));
+    if (re) begin
+      assume(read_addr == last_read_addr + 1);
+      last_read_addr <= read_addr;
+    end
+    if ($past(varray_len) == 0 && !$past(we)) assert(varray_len == 0);
+    if ($past(reset)) assert(varray_len == 0);
+    if (!$past(reset)) assert(varray_len >= $past(varray_len));
+  end
+  end
+`endif
 endmodule

@@ -18,7 +18,7 @@ dma_stage_3_instr   dma_stage_3_dcache_write;
 
 wire          dma_busy;
 regfile_instruction cache_instr_stage_1, cache_load_instr_stage_2, cache_store_instr_stage_2;
-arithmetic_instruction          math_instr;
+math_instr          m_instr;
 always @(posedge clk) begin
   if (sw_0) begin
     cache_store_instr_stage_2 <= 0;
@@ -28,14 +28,50 @@ always @(posedge clk) begin
 end
 wire q_re;
 assign q_re = !queue_empty & !freeze; // do we lose data?
-fake_queue queue (
-.clk(clk),
-.reset(sw_0),
-.re(q_re),
-.dma_instr(dma_stage_1_dcache_read),
-.cache_instr(cache_instr_stage_1),
-.arithmetic_instr(math_instr),
-.empty(queue_empty)
+
+wire [17:0] fake_cache_addr, fake_main_mem_addr, fake_d_cache_addr, fake_d_main_mem_addr;
+wire fake_queue_we;
+wire [1:0]  fake_queue_instr_type;
+wire [0:8] fake_queue_arith_instr;
+reg  [0:2]  fake_queue_ram_instr;
+reg  [0:6] fake_queue_ld_st_instr;
+
+instruction_queue instruction_queue (
+  .reset(sw_0),
+  .clk(clk),
+
+  // Pop
+  .re(q_re),
+  .out_dma_instr(dma_stage_1_dcache_read),
+  .out_math_instr(m_instr),
+  .out_cache_instr(cache_instr_stage_1),
+  .empty(queue_empty),
+
+  // Push
+  .we(fake_queue_we),
+  .in_instr_type(fake_queue_instr_type),
+  .copy_count(5'd16),
+  .cache_addr(fake_cache_addr),
+  .d_cache_addr(fake_d_cache_addr),
+  .main_mem_addr(fake_main_mem_addr),
+  .d_main_mem_addr(fake_d_main_mem_addr),
+  .in_arith_instr(fake_queue_arith_instr),
+  .in_ram_instr(fake_queue_ram_instr),
+  .in_ld_st_instr(fake_queue_ld_st_instr)
+);
+
+fake_control_unit fake_control_unit (
+  .clk(clk),
+  .reset(sw_0),
+  .cache_addr(fake_cache_addr),
+  .main_mem_addr(fake_main_mem_addr),
+  .d_cache_addr(fake_d_cache_addr),
+  .d_main_mem_addr(fake_d_main_mem_addr),
+  .queue_we(fake_queue_we),
+  .queue_instr_type(fake_queue_instr_type),
+  .queue_arith_instr(fake_queue_arith_instr),
+  .queue_ram_instr(fake_queue_ram_instr),
+  .queue_ld_st_instr(fake_queue_ld_st_instr)
 );
 
 dma_uart dma (
@@ -69,10 +105,10 @@ dcache dcache (
 .reset(sw_0)
 );
 
-wire [1:0] processing_read_addr_regfile, processing_write_addr_regfile;
+wire [0:5] processing_read_addr_regfile, processing_write_addr_regfile;
 wire [17:0] processing_regfile_dat_r, processing_regfile_dat_w;
 wire processing_regfile_we;
-regfile #(.SUPERSCALAR_WIDTH(1), .REG_WIDTH(18)) regfile(
+regfile #(.LOG_SUPERSCALAR_WIDTH(4), .REG_WIDTH(18)) regfile(
 .clk(clk),
 .reset(sw_0),
 .freeze(freeze),
@@ -81,10 +117,10 @@ regfile #(.SUPERSCALAR_WIDTH(1), .REG_WIDTH(18)) regfile(
 .port_c_we(processing_regfile_we), // .port_c_we(1'd1),
 .port_c_write_addr(processing_write_addr_regfile),//.port_c_write_addr(4'd0),
 .port_c_in(processing_regfile_dat_w), // .port_c_in(18'd150),
-.port_b_read_addr(cache_instr_stage_1.regfile_reg),
+.port_b_read_addr({cache_instr_stage_1.superscalar_thread, cache_instr_stage_1.regfile_reg}),
 .port_b_out(cache_store_dat_stage_2),
 .port_d_we(cache_load_instr_stage_2.valid && cache_load_instr_stage_2.is_load), // fun fact: if you make a typo and instead type cache_load_instr_stage_2.is_load.valid the compiler wont say anything!!!
-.port_d_write_addr(cache_load_instr_stage_2.regfile_reg),
+.port_d_write_addr({cache_load_instr_stage_2.superscalar_thread, cache_load_instr_stage_2.regfile_reg}),
 .port_d_in(cache_load_dat_stage_2)
 );
 
@@ -92,7 +128,7 @@ math_pipeline processing_pipeline(
 .clk(clk),
 .reset(sw_0),
 .freeze(freeze),
-.instr(math_instr),
+.instr(m_instr),
 .regfile_read_addr(processing_read_addr_regfile),
 .stage_2_dat(processing_regfile_dat_r),
 .regfile_write_addr(processing_write_addr_regfile),

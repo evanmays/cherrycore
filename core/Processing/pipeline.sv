@@ -2,22 +2,21 @@ module math_pipeline(
   input                           clk,
   input                           freeze,
   input                           reset,
-  input   arithmetic_instruction  instr,
+  input   math_instr  instr,
 
   // Stage 1
-  output  reg [0:1]             regfile_read_addr,
+  output  reg [0:5]             regfile_read_addr,
 
   // Result of stage 1
   input       [17:0]            stage_2_dat,
 
   // Stage 3
-  output  reg [0:1]             regfile_write_addr,
+  output  reg [0:5]             regfile_write_addr,
   output  reg [17:0]            regfile_dat_w,
   output  reg                   regfile_we
 );
 
-arithmetic_instruction instr_2, instr_3;
-reg [4:0] instr_1;
+math_instr instr_1, instr_2, instr_3;
 reg [17:0] stage_3_dat;
 
 always @(posedge clk) begin
@@ -26,7 +25,7 @@ always @(posedge clk) begin
     // Stage 1: Initiate Read register
     //
     instr_1 <= instr;
-    if (instr.valid) regfile_read_addr <= instr.reg_in; // TODO: add thread here
+    if (instr.valid) regfile_read_addr <= {instr.superscalar_thread, REG_MATMUL_INPUT}; // TODO: add thread here
 
     //
     // Stage 2: Allow Regfile to do the Read
@@ -48,7 +47,7 @@ always @(posedge clk) begin
     //
     regfile_we <= instr_3.valid;
     regfile_dat_w <= stage_3_dat;
-    regfile_write_addr <= instr_3.reg_out;
+    regfile_write_addr <= {instr_3.superscalar_thread, REG_MATMUL_OUTPUT};
   end
   if (reset) begin
     regfile_read_addr <= 0;

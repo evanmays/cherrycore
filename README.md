@@ -2,7 +2,7 @@
 
 ![Indicator of if Unit Tests workflow are passing](https://github.com/evanmays/cherrycore/actions/workflows/SVUT.yml/badge.svg)
 
-A deep learning training core. Start tiny with just a control unit, memory, and ReLU. Then, get bigger and better. Every version should work on real hardware. The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
+A deep learning training core. First ~~on paper~~, then in verilog, then on FPGA. The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
 
 ISA in Cherry ISA.pdf
 Superscalar notes below
@@ -42,6 +42,7 @@ Next step is to implement the instruction queue so we can integrate control unit
 * icarus-verilog 
 * yosys
 * nextpnr-xilinx if you want to place and route to check for timing
+* Verilator. Instructions here https://verilator.org/guide/latest/install.html
 ```sh
 brew install icarus-verilog # Yes, even on linux
 # add yosys
@@ -49,10 +50,11 @@ brew install icarus-verilog # Yes, even on linux
 ```
 
 ### Setup Development Environment
-1. Clone this repo
+1. Clone this repo and pull submodules
 ```sh
 git clone https://github.com/evanmays/cherrycore
 cd cherrycore
+git submodule update --init --recursive
  ```
 2. Synthesize then place and route a module (in this example, the regfile)
 ```sh

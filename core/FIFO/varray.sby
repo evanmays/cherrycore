@@ -1,0 +1,13 @@
+[options]
+mode prove
+depth 30
+
+[engines]
+smtbmc
+
+[script]
+read -formal varray.sv
+prep -top varray
+
+[files]
+varray.sv

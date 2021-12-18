@@ -27,10 +27,10 @@ module instruction_queue (
   input logic [0:8]                             in_arith_instr,
   input logic [0:2]                             in_ram_instr,
   input logic [0:6]                             in_ld_st_instr,
-  output logic                                  needs_reset
+  output logic                                  needs_reset //todo fix.
 );
 
-localparam [3:0] LOG_SUPERSCALAR_WIDTH = 4;
+localparam LOG_SUPERSCALAR_WIDTH = 4;
 localparam [4:0] SUPERSCALAR_WIDTH = 16;
 localparam [3:0] DMA_INSTRUCTION_LATENCY = 2;
 localparam REGFILE_INSTRUCTION_LATENCY = 3;
@@ -44,7 +44,7 @@ reg [VARRAY_POS_BITS-1:0] varray_pos_when_done [0:2];
 wire [VARRAY_POS_BITS-1:0] insert_varray_pos = max(
                                                 varray_pos_when_done[prev_instr_type],
                                                 next_free_spot_in_varray[in_instr_type],
-                                                varray_read_pos
+                                                varray_read_pos + 1 // add 1 since write has 1 cycle latency and read doesn't
                                               );
 reg [VARRAY_POS_BITS-1:0] varray_read_pos;
 
@@ -94,6 +94,7 @@ function [3:0] latency;
   end
 endfunction
 
+logic [15:0] varr_len [0:2];
 
 wire [0:29] cache_varray_dat_r;
 wire        cache_varray_is_new_superscalar_group;
@@ -109,7 +110,9 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(30)) cache_varray (
   .re(re),
   .read_addr(varray_read_pos),
   .dat_r(cache_varray_dat_r),
-  .is_new_superscalar_group(cache_varray_is_new_superscalar_group)
+  .is_new_superscalar_group(cache_varray_is_new_superscalar_group),
+
+  .varray_len(varr_len[INSTR_TYPE_LOAD_STORE])
 );
 
 wire [0:39] dma_varray_dat_r;
@@ -126,49 +129,67 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(40)) dma_varray (
   .re(re),
   .read_addr(varray_read_pos),
   .dat_r(dma_varray_dat_r),
-  .is_new_superscalar_group(dma_varray_is_new_superscalar_group)
+  .is_new_superscalar_group(dma_varray_is_new_superscalar_group),
+
+  .varray_len(varr_len[INSTR_TYPE_RAM])
 );
 
 // Do some post processing on the varray elements
 // to reconstruct the actual addresses
 always @(posedge clk) begin
-  // Math Instruction Out
-  out_math_instr <= math_varray_dat_r;
-
-  // Cache Instruction Out
-  //{in_ld_st_instr, cache_addr, d_cache_addr}
-  out_cache_instr.valid <= cache_varray_dat_r[0];
-
-  out_cache_instr.is_load <= cache_varray_dat_r[1];
-  out_cache_instr.cache_slot <= cache_varray_dat_r[2:3];
-  out_cache_instr.regfile_reg <= cache_varray_dat_r[4:5];
-  // out_cache_instr.zero_flag <= cache_varray_dat_r[6]; // TODO
-  // out_cache_instr.skip_flag <= cache_varray_dat_r[7]; // TODO
-  if (cache_varray_is_new_superscalar_group)
-    out_cache_instr.cache_addr <= cache_varray_dat_r[8 +: 11];
-  else
-    out_cache_instr.cache_addr <= out_cache_instr.cache_addr + cache_varray_dat_r[19 +: 11];
-
-  // DMA Instruction Out
-  out_dma_instr.valid <= dma_varray_dat_r[0];
-  out_dma_instr.mem_we <= dma_varray_dat_r[1];
-  out_dma_instr.cache_slot <= dma_varray_dat_r[38:39];
-  if (dma_varray_is_new_superscalar_group) begin
-    out_dma_instr.main_mem_addr <= dma_varray_dat_r[2 +: 7];
-    out_dma_instr.cache_addr    <= dma_varray_dat_r[16 +: 11];
-  end else begin
-    out_dma_instr.main_mem_addr <= out_dma_instr.main_mem_addr + dma_varray_dat_r[9 +: 7];
-    out_dma_instr.cache_addr    <= out_dma_instr.cache_addr + dma_varray_dat_r[27 +: 11];
-  end
-
   if (reset) begin
     out_math_instr <= 0;
     out_dma_instr <= 0;
     out_cache_instr <= 0;
+  end else if (re) begin
+    // Math Instruction Out
+    out_math_instr.valid <= math_varray_dat_r[0];
+    out_math_instr.category <= math_varray_dat_r[1:3];
+    out_math_instr.options <= math_varray_dat_r[4:9];
+    if (math_varray_is_new_superscalar_group)
+      out_math_instr.superscalar_thread <= 0;
+    else
+      out_math_instr.superscalar_thread <= out_math_instr.superscalar_thread + 1;
+
+    // Cache Instruction Out
+    //{in_ld_st_instr, cache_addr, d_cache_addr}
+    out_cache_instr.valid <= cache_varray_dat_r[0];
+
+    out_cache_instr.is_load <= cache_varray_dat_r[1];
+    out_cache_instr.cache_slot <= cache_varray_dat_r[2:3];
+    out_cache_instr.regfile_reg <= cache_varray_dat_r[4:5];
+    // out_cache_instr.zero_flag <= cache_varray_dat_r[6]; // TODO
+    // out_cache_instr.skip_flag <= cache_varray_dat_r[7]; // TODO
+    if (cache_varray_is_new_superscalar_group) begin
+      out_cache_instr.cache_addr <= cache_varray_dat_r[8 +: 11];
+      out_cache_instr.superscalar_thread <= 0;
+    end else begin
+      out_cache_instr.cache_addr <= out_cache_instr.cache_addr + cache_varray_dat_r[19 +: 11];
+      out_cache_instr.superscalar_thread <= out_cache_instr.superscalar_thread + 1;
+    end
+    // DMA Instruction Out
+    out_dma_instr.valid <= dma_varray_dat_r[0];
+    out_dma_instr.mem_we <= dma_varray_dat_r[1];
+    out_dma_instr.cache_slot <= dma_varray_dat_r[38:39];
+    // if (dma_varray_dat_r[0]) $display("last one was  %d with we %d and %d r%b %b", dma_varray_dat_r[1], dma_varray_dat_r, $past(dma_varray_dat_r));
+    // if (dma_varray_dat_r[0] && dma_varray_dat_r[1]) $display("SHOULKDNT HIT %d", dma_varray_dat_r[2 +: 7]);
+    if (dma_varray_is_new_superscalar_group) begin
+      out_dma_instr.main_mem_addr <= dma_varray_dat_r[2 +: 7];
+      out_dma_instr.cache_addr    <= dma_varray_dat_r[16 +: 11];
+    end else begin
+      // if (dma_varray_dat_r[0]) $display("iq write mmain mem addr %d %b", out_dma_instr.main_mem_addr, dma_varray_dat_r[0]);
+      out_dma_instr.main_mem_addr <= out_dma_instr.main_mem_addr + dma_varray_dat_r[9 +: 7];
+      out_dma_instr.cache_addr    <= out_dma_instr.cache_addr + dma_varray_dat_r[27 +: 11];
+    end
+  end else if (empty) begin // what if current cycle empty and last cycle was a read? We lose the instruction?
+    out_cache_instr.valid <= 0;
+    out_math_instr.valid <= 0; // must we zero entire thing to prevent x propagation?
+    out_dma_instr.valid <= 0;
   end
 end
 
-wire [0:9] math_varray_dat_r;
+wire [0:9]  math_varray_dat_r;
+wire        math_varray_is_new_superscalar_group;
 varray #(.VIRTUAL_ELEMENT_WIDTH(10)) math_varray (
   .clk(clk),
   .reset(reset),
@@ -180,7 +201,44 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(10)) math_varray (
 
   .re(re),
   .read_addr(varray_read_pos),
-  .dat_r(math_varray_dat_r)
+  .dat_r(math_varray_dat_r),
+  .is_new_superscalar_group(math_varray_is_new_superscalar_group),
+
+  .varray_len(varr_len[INSTR_TYPE_ARITHMETIC])
 );
+
+always @(posedge clk) begin
+  if (re)
+    empty <= varray_read_pos >= varr_len[INSTR_TYPE_LOAD_STORE] & varray_read_pos >= varr_len[INSTR_TYPE_RAM] & varray_read_pos >= varr_len[INSTR_TYPE_ARITHMETIC]; // need +1 on pos?
+  if (we)
+    empty <= copy_count == 1 && re ? empty : 0;
+  if (reset)
+    empty <= 1;
+  
+end
+
+`ifdef FORMAL
+  initial restrict(reset);
+  initial f_past_valid = 1'b0;
+  always @($global_clock) begin
+    restrict(clk == !$past(clk));
+    if (!$rose(clk)) begin
+        assume($stable(reset));
+	assume($stable(re));
+	assume($stable(we));
+	assume($stable(in_instr_type));
+	assume($stable(copy_count));
+	// todo, assume rest of inputs
+    end
+  end
+  always @(posedge clk) begin
+    f_past_valid <= 1'b1;
+//    assert (out_dma_instr.mem_we == $past(dma_varray_dat_r[1]));
+    if (f_past_valid) begin
+    if ($past(empty) && !$past(we)) assert(empty);
+    if ($past(reset)) assert(empty);
+    end
+  end
+`endif
 
 endmodule

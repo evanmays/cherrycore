@@ -1,0 +1,19 @@
+[options]
+mode bmc
+depth 30
+
+[engines]
+smtbmc
+
+[script]
+read -formal maintypes.sv
+read -formal smalltypes.sv
+read -formal varray.sv
+read -formal iq.sv
+prep -top instruction_queue
+
+[files]
+varray.sv
+iq.sv
+maintypes.sv ../types.sv
+smalltypes.sv ../ControlUnit/types.sv

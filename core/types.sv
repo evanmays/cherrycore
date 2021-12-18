@@ -32,19 +32,11 @@ typedef struct packed {
   logic         is_load;
   logic [1:0]   cache_slot;
   logic [10:0]  cache_addr;
+  logic [3:0]   superscalar_thread; // used for deciding which regfile reg
   logic [1:0]   regfile_reg;
   // logic         zero_flag; // TODO
   // logic         skip_flag; // TODO
 } regfile_instruction;
-
-//
-// Processing Pipeline Data (Depracated)
-//
-typedef struct packed {
-  logic       valid;
-  logic [1:0] reg_in;
-  logic [1:0] reg_out;
-} arithmetic_instruction;
 
 //
 // Processing Pipeline Data
@@ -53,4 +45,29 @@ typedef struct packed {
   logic       valid;
   logic [2:0] category; // check assembler.py
   logic [5:0] options;  // format depends on the category
+  logic [3:0] superscalar_thread; // used for deciding which regfile reg
 } math_instr;
+
+parameter REG_MATMUL_INPUT = 2'd0;
+parameter REG_MATMUL_WEIGHTS = 2'd1;
+parameter REG_MATMUL_OUTPUT = 2'd2;
+parameter REG_MATMUL_ACC = 2'd3;
+
+
+//
+// Other
+//
+typedef enum {LOOP_TYPE_START_INDEPENDENT, LOOP_TYPE_START_SLOW, LOOP_TYPE_JUMP_OR_END} e_loop_instr_type;
+
+parameter INSTR_TYPE_LOAD_STORE   = 2'd0;
+parameter INSTR_TYPE_RAM          = 2'd1;
+parameter INSTR_TYPE_ARITHMETIC   = 2'd2;
+parameter INSTR_TYPE_LOOP         = 2'd3;
+
+typedef struct packed {
+  reg is_new_loop;
+  reg [17:0] iteration_count;
+  reg [5:0] jump_amount;
+  reg is_independent;
+  reg [2:0] name; // ascii_cast('i'+name) to get the character
+} decoded_loop_instruction;
