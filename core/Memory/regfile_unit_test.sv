@@ -11,19 +11,19 @@ module regfile_testbench();
     `SVUT_SETUP
 
     parameter REG_CNT = 4;
-    parameter SUPERSCALAR_WIDTH = 4;
+    parameter LOG_SUPERSCALAR_WIDTH = 4;
     parameter REG_WIDTH = 288;
 
     reg clk, reset, freeze;
     reg port_c_we, port_d_we;
-    reg [0:REG_CNT*SUPERSCALAR_WIDTH-1] port_a_read_addr, port_b_read_addr, port_c_write_addr, port_d_write_addr;
+    reg [0:REG_CNT+LOG_SUPERSCALAR_WIDTH-1] port_a_read_addr, port_b_read_addr, port_c_write_addr, port_d_write_addr;
     reg [REG_WIDTH-1:0] port_c_in, port_d_in;
     logic [REG_WIDTH-1:0] port_a_out, port_b_out;
 
     regfile
     #(
     REG_CNT,
-    SUPERSCALAR_WIDTH,
+    LOG_SUPERSCALAR_WIDTH,
     REG_WIDTH
     )
     dut 
