@@ -31,21 +31,23 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
 
   // Program (header) ro_data Ports
   input  wire [0:4*9*18-1] prog_apu_formula, // each formula has 8 coefficients and 1 constant. all 18 bit values. We can load 4 formulas at a time.
-  input  wire [0:24*8-1]   prog_loop_ro_data, // 8 iteration counts and jump amounts. Can load in 1 cycle.
+  input  wire [24*8-1:0]   prog_loop_ro_data, // 8 iteration counts and jump amounts. Can load in 1 cycle.
 
   // Push to instruction queue ports
   output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
   output reg         queue_we,
   output reg  [1:0]  queue_instr_type,
-  output reg  [0:13] queue_arith_instr,
-  output reg  [0:8]  queue_ram_instr,
-  output reg  [0:9] queue_ld_st_instr
+  output reg  [13:0] queue_arith_instr,
+  output reg  [8:0]  queue_ram_instr,
+  output reg  [9:0] queue_ld_st_instr,
+
+  output logic program_error
 );
 enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM} S;
 
 // Info about current program
 reg [15:0]  program_end_pc;
-reg [0:24*8-1] loop_ro_data;
+reg [24*8-1:0] loop_ro_data;
 
 localparam SUPERSCALAR_WIDTH = (1 << LOG_SUPERSCALAR_WIDTH);
 
@@ -53,22 +55,26 @@ localparam SUPERSCALAR_WIDTH = (1 << LOG_SUPERSCALAR_WIDTH);
 localparam LOG_LOOP_CNT = 3; // right now we have a strong amount of loops allowed in the stack == amount of loops allowed in ro data. We can break this relationship in the future.
 localparam LOOP_CNT = (1 << LOG_LOOP_CNT);
 reg signed [LOG_LOOP_CNT:0] loop_cur_depth; // -1 is empty
-reg [17:0] loop_stack_value [LOOP_CNT-1:0];
-reg [17:0] loop_stack_total_iterations [LOOP_CNT-1:0];
-reg [7:0] loop_stack_jump_amount [LOOP_CNT-1:0];
-reg loop_stack_is_independent [LOOP_CNT-1:0];
+`define LOOP_CUR_DEPTH loop_cur_depth[LOG_LOOP_CNT-1:0]
+reg [17:0] loop_stack_value [0:LOOP_CNT-1];
+reg [17:0] loop_stack_total_iterations [0:LOOP_CNT-1];
+reg [5:0] loop_stack_jump_amount [0:LOOP_CNT-1];
+reg loop_stack_is_independent [0:LOOP_CNT-1];
 reg [LOG_LOOP_CNT-1:0] loop_stack_name [LOOP_CNT-1:0]; // name for loop at each stack depth positon. i.e. i, j, k, l, m, ...  ascii(val+'j') tells you the name which corresponds to the cherry program
-wire signed [LOG_LOOP_CNT:0] loop_cur_depth_plus_one = loop_cur_depth + 1;
-reg [7:0] jump_amount;
-wire [17:0] loop_cur_remaining_iterations = loop_stack_total_iterations[loop_cur_depth] - loop_stack_value[loop_cur_depth];
+// verilator lint_off WIDTH
+wire [LOG_LOOP_CNT-1:0] loop_cur_depth_plus_one = loop_cur_depth + 1'b1;
+// verilator lint_on WIDTH
+wire max_loops = loop_cur_depth + 1 < 0;
+reg [5:0] jump_amount;
+wire [17:0] loop_cur_remaining_iterations = loop_stack_total_iterations[`LOOP_CUR_DEPTH] - loop_stack_value[`LOOP_CUR_DEPTH];
 
 // APU
 localparam LOG_APU_CNT = 3;
 localparam APU_CNT = (1 << LOG_APU_CNT);
 reg [LOG_LOOP_CNT-1:0] apu_in_loop_var; // input set by loop update FSM step
 reg [17:0] apu_in_di; // input set by loop update FSM step
-reg [0:18*8-1] apu_linear_formulas [APU_CNT-1:0]; // 8 coefficients
-reg [17:0] apu_address_registers [APU_CNT-1:0]; // current data. starts at the constant vals
+reg [18*8-1:0] apu_linear_formulas [0:APU_CNT-1]; // 8 coefficients
+reg [17:0] apu_address_registers [0:APU_CNT-1]; // current data. starts at the constant vals
 
 always @(posedge clk) begin
   case (S)
@@ -101,8 +107,11 @@ always @(posedge clk) begin
       endcase
     end
     START_NEW_LOOP: begin
+      if (max_loops) program_error <= 1;
       loop_stack_value[loop_cur_depth_plus_one] <= 0;
+      // verilator lint_off WIDTH
       loop_cur_depth <= loop_cur_depth_plus_one;
+      // verilator lint_on WIDTH
       loop_stack_is_independent[loop_cur_depth_plus_one] <= loop_instr.is_independent;
       loop_stack_jump_amount[loop_cur_depth_plus_one] <= loop_instr.jump_amount;
       loop_stack_total_iterations[loop_cur_depth_plus_one] <= loop_instr.iteration_count;
@@ -110,19 +119,22 @@ always @(posedge clk) begin
       S <= UPDATE_APU;
     end
     INCREMENT_LOOP: begin
-      loop_stack_value[loop_cur_depth]  <= loop_stack_value[loop_cur_depth] + (loop_stack_is_independent[loop_cur_depth] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
-      apu_in_loop_var <= loop_stack_name[loop_cur_depth];
+      `ifdef FORMAL
+      assert(loop_cur_depth >= 0);
+      `endif
+      loop_stack_value[`LOOP_CUR_DEPTH]  <= loop_stack_value[`LOOP_CUR_DEPTH] + (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
+      apu_in_loop_var <= loop_stack_name[`LOOP_CUR_DEPTH];
       
-      if (loop_stack_is_independent[loop_cur_depth] && loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH) begin
-        apu_in_di <= -1 * loop_stack_total_iterations[loop_cur_depth];
+      if (loop_stack_is_independent[`LOOP_CUR_DEPTH] && loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH) begin
+        apu_in_di <= -1 * loop_stack_total_iterations[`LOOP_CUR_DEPTH];
         loop_cur_depth <= loop_cur_depth - 1;
       end else if (loop_cur_remaining_iterations == 1) begin
-        apu_in_di <= -1 * loop_stack_total_iterations[loop_cur_depth];
+        apu_in_di <= -1 * loop_stack_total_iterations[`LOOP_CUR_DEPTH];
         loop_cur_depth <= loop_cur_depth - 1;
       end else begin
         
-        apu_in_di                  <=                         (loop_stack_is_independent[loop_cur_depth] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
-        jump_amount <= loop_stack_jump_amount[loop_cur_depth];
+        apu_in_di                  <=                         (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
+        jump_amount <= loop_stack_jump_amount[`LOOP_CUR_DEPTH];
       end
       S <= UPDATE_APU;
     end
@@ -137,15 +149,16 @@ always @(posedge clk) begin
       S <= INSERT_TO_QUEUE;
     end
     INSERT_TO_QUEUE: begin
+      assert(loop_cur_depth >= 0)
       if (instruction_type == INSTR_TYPE_LOAD_STORE) begin
         cache_addr     <= apu_address_registers[ld_st_instr[1:3]];
-        d_cache_addr    <= daddr_di(apu_linear_formulas[ld_st_instr[1:3]], loop_cur_depth);
+        d_cache_addr    <= daddr_di(apu_linear_formulas[ld_st_instr[1:3]], `LOOP_CUR_DEPTH);
       end
       if (instruction_type == INSTR_TYPE_RAM) begin
         cache_addr     <= apu_address_registers[ram_instr[1:3]];
         main_mem_addr  <= apu_address_registers[ram_instr[4:6]];
-        d_cache_addr    <= daddr_di(apu_linear_formulas[ram_instr[1:3]], loop_cur_depth);
-        d_main_mem_addr <= daddr_di(apu_linear_formulas[ram_instr[4:6]], loop_cur_depth);
+        d_cache_addr    <= daddr_di(apu_linear_formulas[ram_instr[1:3]], `LOOP_CUR_DEPTH);
+        d_main_mem_addr <= daddr_di(apu_linear_formulas[ram_instr[4:6]], `LOOP_CUR_DEPTH);
       end
       S <= UPDATE_PC;
       queue_we <= 1;
@@ -167,6 +180,7 @@ always @(posedge clk) begin
     end
   endcase
   if (reset) begin
+    program_error <= 0;
     S <= IDLE;
     pc <= 0;
     program_end_pc <= 0;
@@ -176,7 +190,7 @@ always @(posedge clk) begin
     for (integer i=0; i<LOOP_CNT; i=i+1) begin
       loop_stack_value[i] <= 18'd0;
       loop_stack_total_iterations[i] <= 18'd0;
-      loop_stack_jump_amount[i] <= 8'd0;
+      loop_stack_jump_amount[i] <= 6'd0;
       loop_stack_name[i] <= {LOG_LOOP_CNT{1'b0}};
     end
     jump_amount <= 0;
@@ -194,10 +208,8 @@ always @(posedge clk) begin
   end
 end
 
-function [17:0] daddr_di;
-	input [0:18*8-1] linear_formula;
-  input [LOG_LOOP_CNT-1:0] loop_var;
-	begin
+function [17:0] daddr_di ( input [0:18*8-1] linear_formula, input [LOG_LOOP_CNT-1:0] loop_var );
+  begin
     // daddr_di = linear_formula[loop_var*18 +: 18]; // synthesizes poorly
     case (loop_var)
       3'd0: daddr_di = linear_formula[0*18 +: 18];
@@ -216,7 +228,7 @@ endfunction
 // Partial Decoder
 //
 wire [1:0] instruction_type = raw_instruction[0:1] == 2'd0 ? INSTR_TYPE_LOAD_STORE : raw_instruction[0:1] == 2'd1 ? INSTR_TYPE_RAM : raw_instruction[0:1] == 2'd2 ? INSTR_TYPE_ARITHMETIC : INSTR_TYPE_LOOP;
-wire [0:13] arith_instr = raw_instruction[2:15];
+wire [13:0] arith_instr = raw_instruction[2:15];
 wire [0:8]  ram_instr   = raw_instruction[2:10]; // 1 bit is_write, 6 bit 2 apus, 2 bits cache slot
 wire [0:9] ld_st_instr = raw_instruction[2:11]; // 1 bit is_load, 3 bit apu, 2 bit cache slot, 2 bit register_target, 1 bit zero_flag, 1 bit skip_flag, fill (TODO add 2 bit height, 2 bit width)
 decoded_loop_instruction loop_instr;

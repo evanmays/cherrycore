@@ -32,6 +32,7 @@ module control_unit_unit_test();
     logic [0:9]  queue_ld_st_instr;
     logic program_complete;
     logic [6:0] program_header_cache_addr;
+    logic program_error;
     control_unit 
     dut 
     (
@@ -48,12 +49,14 @@ module control_unit_unit_test();
     queue_instr_type,
     queue_arith_instr,
     queue_ram_instr,
-    queue_ld_st_instr
+    queue_ld_st_instr,
+    program_error
     );
 
     // To create a clock:
     initial clk = 0;
     always #2 clk = ~clk;
+    always @(posedge clk) assert(!program_error);
 
     // Setup time format when printing with $realtime
     initial $timeformat(-9, 1, "ns", 8);

@@ -1,6 +1,8 @@
 module loopmux (
     input [2:0] addr,
+    // verilator lint_off LITENDIAN
     input [0:24*8-1] in,
+    // verilator lint_on LITENDIAN
     input independent,
     input new_loop,
     output decoded_loop_instruction loop_instr
