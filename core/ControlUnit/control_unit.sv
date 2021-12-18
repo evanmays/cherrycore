@@ -23,6 +23,7 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
 
   // Program execution queue ports
   output reg          program_complete,
+  output reg [6:0]    program_header_cache_addr,
 
   // Instruction Fetch ports (fetch and decode happen in same cycle. so can't register the icache output)
   input       [0:15]  raw_instruction, // using bit so we can cast raw_instruction[0:1] to instruction_type
@@ -44,7 +45,6 @@ enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREM
 
 // Info about current program
 reg [15:0]  program_end_pc;
-reg [6:0]   program_header_cache_addr;
 reg [0:24*8-1] loop_ro_data;
 
 localparam SUPERSCALAR_WIDTH = (1 << LOG_SUPERSCALAR_WIDTH);
@@ -58,7 +58,7 @@ reg [17:0] loop_stack_total_iterations [LOOP_CNT-1:0];
 reg [7:0] loop_stack_jump_amount [LOOP_CNT-1:0];
 reg loop_stack_is_independent [LOOP_CNT-1:0];
 reg [LOG_LOOP_CNT-1:0] loop_stack_name [LOOP_CNT-1:0]; // name for loop at each stack depth positon. i.e. i, j, k, l, m, ...  ascii(val+'j') tells you the name which corresponds to the cherry program
-wire loop_cur_depth_plus_one = loop_cur_depth + 1;
+wire signed [LOG_LOOP_CNT:0] loop_cur_depth_plus_one = loop_cur_depth + 1;
 reg [7:0] jump_amount;
 wire [17:0] loop_cur_remaining_iterations = loop_stack_total_iterations[loop_cur_depth] - loop_stack_value[loop_cur_depth];
 
@@ -227,6 +227,44 @@ loopmux loopmux (
     .new_loop     (raw_instruction[3]),
     .loop_instr   (loop_instr)
 );
+
+`ifdef FORMAL
+  initial restrict(reset);
+  always @($global_clock) begin
+    restrict(clk == !$past(clk));
+    if (!$rose(clk)) begin
+      assume($stable(reset));
+      assume($stable(raw_instruction));
+      assume($stable(prog_apu_formula));
+      assume($stable(prog_loop_ro_data));
+    end
+  end
+  initial begin
+    f_past_valid = 1'b0;
+  end
+  always @(posedge clk) begin
+    // we dont actually use our ports every cycle. So lets cache the ports to so we can get a real $past that just looks at what the port was the last time it mattered.
+  f_past_valid <= 1'b1;
+  if (f_past_valid) begin
+    
+    assert(loop_cur_depth_plus_one == loop_cur_depth + 1);
+
+
+    // Instruction Queue Push
+
+    // Instruction Fetch
+    // if ($past(instruction_type) != INSTR_TYPE_LOOP && !$past(reset)) assert(pc >= $past(pc));
+    if ($stable(pc)) assume($stable(raw_instruction));
+
+    // Program Fetch and Execution queue
+    if (!$rose(program_complete)) begin
+      assume($stable(prog_apu_formula));
+      assume($stable(prog_loop_ro_data));
+    end
+  end
+  
+  end
+`endif
 endmodule
 
 

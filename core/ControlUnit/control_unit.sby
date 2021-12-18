@@ -1,0 +1,17 @@
+[options]
+mode bmc
+depth 30
+
+[engines]
+smtbmc
+
+[script]
+read -formal types.sv
+read -formal loopmux.sv
+read -formal control_unit.sv
+prep -top control_unit
+
+[files]
+control_unit.sv
+loopmux.sv
+../types.sv

@@ -2,7 +2,7 @@
 `include "svut_h.sv"
 
 /// Specify the module to load or on files.f
-`include "types.sv"
+`include "../types.sv"
 `include "loopmux.sv"
 `include "control_unit.sv"
 
@@ -23,7 +23,7 @@ module control_unit_unit_test();
     logic [4*9*18-1:0] prog_apu_formula;
     logic [0:24*8-1]   prog_loop_ro_data;
     logic  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr;
-    logic [18*8-1:0] linear_formula;;
+    logic [18*8-1:0] linear_formula;
     logic [LOG_LOOP_CNT-1:0] loop_var;
     logic         queue_we;
     logic  [1:0]  queue_instr_type;
@@ -31,12 +31,14 @@ module control_unit_unit_test();
     logic  [0:8]  queue_ram_instr;
     logic [0:9]  queue_ld_st_instr;
     logic program_complete;
+    logic [6:0] program_header_cache_addr;
     control_unit 
     dut 
     (
     clk,
     reset,
     program_complete,
+    program_header_cache_addr,
     raw_instruction,
     pc,
     prog_apu_formula,
