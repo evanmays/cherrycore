@@ -37,6 +37,7 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
   output reg         queue_we,
   output reg  [1:0]  queue_instr_type,
+  output reg  [LOG_SUPERSCALAR_WIDTH:0] queue_copy_count,
   output reg  [8:0]  queue_arith_instr,
   output reg  [2:0]  queue_ram_instr, // {is_write, cache_slot}
   output reg  [6:0]  queue_ld_st_instr, // {is_load, cache_slot, regfile_reg, zero_flag, skip_flag}
@@ -122,7 +123,7 @@ always @(posedge clk) begin
       `ifdef FORMAL
       assert(loop_cur_depth >= 0);
       `endif
-      loop_stack_value[`LOOP_CUR_DEPTH]  <= loop_stack_value[`LOOP_CUR_DEPTH] + (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1);
+      loop_stack_value[`LOOP_CUR_DEPTH]  <= loop_stack_value[`LOOP_CUR_DEPTH] + (loop_stack_is_independent[`LOOP_CUR_DEPTH] ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH ? loop_cur_remaining_iterations : SUPERSCALAR_WIDTH) : 1); // might be redundent case for independent and < superscalar width
       apu_in_loop_var <= loop_stack_name[`LOOP_CUR_DEPTH];
       
       if (loop_stack_is_independent[`LOOP_CUR_DEPTH] && loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH) begin
@@ -162,6 +163,11 @@ always @(posedge clk) begin
       S <= UPDATE_PC;
       queue_we <= 1;
       queue_instr_type  <= instruction_type;
+      queue_copy_count  <= loop_stack_is_independent[`LOOP_CUR_DEPTH]
+                            ? (loop_cur_remaining_iterations <= SUPERSCALAR_WIDTH
+                                ? loop_cur_remaining_iterations
+                                : SUPERSCALAR_WIDTH)
+                            : 1'd1;
       queue_arith_instr <= arith_instr;
       queue_ram_instr   <= {ram_instr[0], ram_instr[7:8]};
       queue_ld_st_instr <= {ld_st_instr[0], ld_st_instr[4:9]};
@@ -202,7 +208,7 @@ always @(posedge clk) begin
 
     queue_we <= 0;
     queue_instr_type <= 0;
-
+    queue_copy_count <= 0;
     program_complete <= 0;
   end
 end

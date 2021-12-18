@@ -27,6 +27,7 @@ module control_unit_unit_test();
     logic [LOG_LOOP_CNT-1:0] loop_var;
     logic         queue_we;
     logic  [1:0]  queue_instr_type;
+    logic  [3:0] queue_copy_count;
     logic  [0:8] queue_arith_instr;
     logic  [0:2]  queue_ram_instr;
     logic [0:6]  queue_ld_st_instr;
@@ -47,6 +48,7 @@ module control_unit_unit_test();
     cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
     queue_we,
     queue_instr_type,
+    queue_copy_count,
     queue_arith_instr,
     queue_ram_instr,
     queue_ld_st_instr,
@@ -117,24 +119,29 @@ module control_unit_unit_test();
     for(int k = 0; k < 256; k++) begin
         posedge_clk_until_queue_we_is_on_with_max_iter(10);
         `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_copy_count === 4'd1));
         `ASSERT((queue_instr_type === INSTR_TYPE_RAM));
         `ASSERT((queue_ram_instr === {icache[7][2], icache[7][9:10]}));
         @(posedge clk);
         `ASSERT((queue_we === 1'b0));
         posedge_clk_until_queue_we_is_on_with_max_iter(10);
         `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_copy_count === 4'd1));
         `ASSERT((queue_instr_type === INSTR_TYPE_LOAD_STORE));
         `ASSERT((queue_ld_st_instr === {icache[8][2], icache[8][6:11]}));
         posedge_clk_until_queue_we_is_on_with_max_iter(10);
         `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_copy_count === 4'd1));
         `ASSERT((queue_instr_type === INSTR_TYPE_ARITHMETIC));
         `ASSERT((queue_arith_instr === icache[9][2:15]));
         posedge_clk_until_queue_we_is_on_with_max_iter(10);
         `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_copy_count === 4'd1));
         `ASSERT((queue_instr_type === INSTR_TYPE_LOAD_STORE));
         `ASSERT((queue_ld_st_instr === {icache[10][2], icache[10][6:11]}));
         posedge_clk_until_queue_we_is_on_with_max_iter(10);
         `ASSERT((queue_we === 1'b1));
+        `ASSERT((queue_copy_count === 4'd1));
         `ASSERT((queue_instr_type === INSTR_TYPE_RAM));
         `ASSERT((queue_ram_instr === {icache[11][2], icache[11][9:10]}));
         @(posedge clk);
