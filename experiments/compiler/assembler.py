@@ -1,5 +1,4 @@
 # Source of truth for bit packing Cherry Instruction Set
-from functools import cache
 from bitstring import pack, BitArray
 from enum import IntEnum
 from sympy import expand, symbols, Poly, degree_list
@@ -76,7 +75,7 @@ def bit_pack_loop_instruction(is_start_loop: bool, is_independent: bool = None, 
 def bit_pack_cache_instruction(is_load: bool, apu_address, cache_slot: int, target: Reg, zero_flag: bool = False, skip_flag: bool = False):
     assert apu_address < APU_CNT_MAX
     assert cache_slot < 4
-    # Note: strides should be stored in the apu. We need to add support for that
+    # Note: strides should be stored in the apu. We need to add support for that. They are constant values.
     # Note: height and width should be stored in the apu (need a special max function that takes a specified loop var as input). We need to add support for that
     return pack('uint:2, uint:1, uint:3, uint:2, uint:2, 2*uint:1, uint:4', _Category.MEMORY, is_load, apu_address, cache_slot, target, zero_flag, skip_flag, 0)
 
@@ -92,6 +91,8 @@ def bit_pack_program_header(loop_iteration_count: list, loop_jump_amount: list, 
     assert len(apu_formulas) == 8
     loop_ro_data = BitArray()
     for iteration_count, jump_amount in zip(loop_iteration_count, loop_jump_amount):
+        assert iteration_count < 262_143
+        assert jump_amount < 64
         loop_ro_data.append(
             pack('uint:18, uint:6', iteration_count, jump_amount)
         )

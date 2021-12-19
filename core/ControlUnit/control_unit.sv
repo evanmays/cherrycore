@@ -32,8 +32,10 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   // Program (header) ro_data Ports
   input  wire [0:4*9*18-1] prog_apu_formula, // each formula has 8 coefficients and 1 constant. all 18 bit values. We can load 4 formulas at a time.
   input  wire [24*8-1:0]   prog_loop_ro_data, // 8 iteration counts and jump amounts. Can load in 1 cycle.
+  output reg               ro_data_addr,
 
   // Push to instruction queue ports
+  input  wire        instr_queue_stall_push,
   output reg  [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr,
   output reg         queue_we,
   output reg  [1:0]  queue_instr_type,
@@ -82,10 +84,12 @@ always @(posedge clk) begin
     IDLE: begin
       S <= PREPARE_PROGRAM_0;
       program_complete <= 0;
+      ro_data_addr <= 0;
     end
     PREPARE_PROGRAM_0: begin
       pc <= 6;
       program_end_pc <= 13; // should be one spot after the last spot in the program. End of program (non inclusive)
+      ro_data_addr <= 1;
       S <= PREPARE_PROGRAM_1;
       for (integer i = 0; i < 4; i = i + 1) begin
         apu_address_registers[i]  <= prog_apu_formula[i*9*18+8*18 +: 18];
@@ -148,7 +152,7 @@ always @(posedge clk) begin
       // currently unsupported
       S <= INSERT_TO_QUEUE;
     end
-    INSERT_TO_QUEUE: begin
+    INSERT_TO_QUEUE: if (!instr_queue_stall_push) begin
       assert(loop_cur_depth >= 0)
       if (instruction_type == INSTR_TYPE_LOAD_STORE) begin
         cache_addr     <= apu_address_registers[ld_st_instr[1:3]];
@@ -181,7 +185,7 @@ always @(posedge clk) begin
     end
     FINISH_PROGRAM: begin
       program_complete <= 1;
-      S <= IDLE;
+      // S <= IDLE;
     end
   endcase
   if (reset) begin
@@ -189,6 +193,7 @@ always @(posedge clk) begin
     S <= IDLE;
     pc <= 0;
     program_end_pc <= 0;
+    ro_data_addr <= 0;
     loop_ro_data <= 0;
     program_header_cache_addr <= 0;
     loop_cur_depth <= -1;

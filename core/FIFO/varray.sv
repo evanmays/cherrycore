@@ -12,7 +12,8 @@ module varray (
   input [VIRTUAL_ADDR_BITS-1:0] read_addr,
   output logic [0:VIRTUAL_ELEMENT_WIDTH-1] dat_r,
   output logic [VIRTUAL_ADDR_BITS-1:0] varray_len,
-  output logic is_new_superscalar_group
+  output logic is_new_superscalar_group,
+  output logic queue_almost_full
 );
 parameter VIRTUAL_ELEMENT_WIDTH = 18;
 parameter VIRTUAL_ADDR_BITS = 16;
@@ -24,6 +25,7 @@ logic [4:0]   mem_varr_pos_end_offset [0:QUEUE_LENGTH-1];
 logic [0:VIRTUAL_ELEMENT_WIDTH-1]  mem_varr_dat [0:QUEUE_LENGTH-1];
 logic [LOG_QUEUE_LENGTH-1:0] head, tail;
 wire [LOG_QUEUE_LENGTH-1:0] queue_size = head >= tail ? head - tail : QUEUE_LENGTH - 1 - tail + head;
+assign queue_almost_full = queue_size > QUEUE_LENGTH - 3; // fix later: can probably do minus 1?
 always @(posedge clk) begin
   if (reset) begin
     head <= 0;

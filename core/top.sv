@@ -3,7 +3,8 @@ input               clk     , // Top level system clock input.
 input               sw_0 , // reset switch
 input   wire        uart_rxd, // UART Recieve pin.
 output  wire        uart_txd,  // UART transmit pin.
-output  wire [7:0]  led
+output  wire [7:0]  led,
+output  wire        program_complete
 );
 wire                freeze;
 assign freeze = dma_busy;
@@ -29,13 +30,14 @@ end
 wire q_re;
 assign q_re = !queue_empty & !freeze; // do we lose data?
 
-wire [17:0] fake_cache_addr, fake_main_mem_addr, fake_d_cache_addr, fake_d_main_mem_addr;
-wire fake_queue_we;
-wire [1:0]  fake_queue_instr_type;
-wire [0:8] fake_queue_arith_instr;
-reg  [0:2]  fake_queue_ram_instr;
-reg  [0:6] fake_queue_ld_st_instr;
-
+wire [17:0] cache_addr, main_mem_addr, d_cache_addr, d_main_mem_addr;
+wire queue_we;
+wire [1:0]  queue_instr_type;
+wire [4:0] queue_copy_count;
+wire [8:0] queue_arith_instr;
+wire  [2:0]  queue_ram_instr;
+wire  [6:0] queue_ld_st_instr;
+wire instr_queue_stall_push;
 instruction_queue instruction_queue (
   .reset(sw_0),
   .clk(clk),
@@ -48,30 +50,58 @@ instruction_queue instruction_queue (
   .empty(queue_empty),
 
   // Push
-  .we(fake_queue_we),
-  .in_instr_type(fake_queue_instr_type),
-  .copy_count(5'd16),
-  .cache_addr(fake_cache_addr),
-  .d_cache_addr(fake_d_cache_addr),
-  .main_mem_addr(fake_main_mem_addr),
-  .d_main_mem_addr(fake_d_main_mem_addr),
-  .in_arith_instr(fake_queue_arith_instr),
-  .in_ram_instr(fake_queue_ram_instr),
-  .in_ld_st_instr(fake_queue_ld_st_instr)
+  .we(queue_we),
+  .in_instr_type(queue_instr_type),
+  .copy_count(queue_copy_count),
+  .cache_addr(cache_addr),
+  .d_cache_addr(d_cache_addr),
+  .main_mem_addr(main_mem_addr),
+  .d_main_mem_addr(d_main_mem_addr),
+  .in_arith_instr(queue_arith_instr),
+  .in_ram_instr(queue_ram_instr),
+  .in_ld_st_instr(queue_ld_st_instr),
+  .stall_push(instr_queue_stall_push)
 );
-
-fake_control_unit fake_control_unit (
+wire [0:15] raw_instruction;
+wire [15:0] pc;
+wire        ro_data_addr;
+wire [0:4*9*18-1] prog_apu_formula;
+wire [24*8-1:0]   prog_loop_ro_data;
+control_unit #(4) control (
   .clk(clk),
   .reset(sw_0),
-  .cache_addr(fake_cache_addr),
-  .main_mem_addr(fake_main_mem_addr),
-  .d_cache_addr(fake_d_cache_addr),
-  .d_main_mem_addr(fake_d_main_mem_addr),
-  .queue_we(fake_queue_we),
-  .queue_instr_type(fake_queue_instr_type),
-  .queue_arith_instr(fake_queue_arith_instr),
-  .queue_ram_instr(fake_queue_ram_instr),
-  .queue_ld_st_instr(fake_queue_ld_st_instr)
+
+  .program_complete(program_complete),
+
+  .raw_instruction(raw_instruction),
+  .pc(pc),
+
+  .prog_apu_formula(prog_apu_formula),
+  .prog_loop_ro_data(prog_loop_ro_data),
+  .ro_data_addr(ro_data_addr),
+
+  .instr_queue_stall_push(instr_queue_stall_push),
+  .cache_addr(cache_addr),
+  .main_mem_addr(main_mem_addr),
+  .d_cache_addr(d_cache_addr),
+  .d_main_mem_addr(d_main_mem_addr),
+  .queue_we(queue_we),
+  .queue_instr_type(queue_instr_type),
+  .queue_copy_count(queue_copy_count),
+  .queue_arith_instr(queue_arith_instr),
+  .queue_ram_instr(queue_ram_instr),
+  .queue_ld_st_instr(queue_ld_st_instr)
+);
+
+fake_icache icache (
+  .raw_instruction(raw_instruction),
+  .pc(pc)
+);
+
+fake_ro_data ro_data (
+  .addr(ro_data_addr),
+  .prog_apu_formula(prog_apu_formula),
+  .prog_loop_ro_data(prog_loop_ro_data)
 );
 
 dma_uart dma (

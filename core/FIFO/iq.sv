@@ -27,12 +27,13 @@ module instruction_queue (
   input logic [0:8]                             in_arith_instr,
   input logic [0:2]                             in_ram_instr,
   input logic [0:6]                             in_ld_st_instr,
-  output logic                                  needs_reset //todo fix.
+  output logic                                  needs_reset, //todo fix.
+  output logic                                  stall_push
 );
 
 localparam LOG_SUPERSCALAR_WIDTH = 4;
 localparam [4:0] SUPERSCALAR_WIDTH = 16;
-localparam [3:0] DMA_INSTRUCTION_LATENCY = 2;
+localparam [3:0] DMA_INSTRUCTION_LATENCY = 4; // 2 too small. maybe 3 works?
 localparam REGFILE_INSTRUCTION_LATENCY = 3;
 localparam ARITH_INSTRUCTION_LATENCY = 10;
 localparam VARRAY_POS_BITS = 16;
@@ -95,6 +96,8 @@ function [3:0] latency;
 endfunction
 
 logic [15:0] varr_len [0:2];
+logic  [0:2] varr_queue_almost_full;
+assign stall_push = |varr_queue_almost_full;
 
 wire [0:29] cache_varray_dat_r;
 wire        cache_varray_is_new_superscalar_group;
@@ -112,7 +115,8 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(30)) cache_varray (
   .dat_r(cache_varray_dat_r),
   .is_new_superscalar_group(cache_varray_is_new_superscalar_group),
 
-  .varray_len(varr_len[INSTR_TYPE_LOAD_STORE])
+  .varray_len(varr_len[INSTR_TYPE_LOAD_STORE]),
+  .queue_almost_full(varr_queue_almost_full[INSTR_TYPE_LOAD_STORE])
 );
 
 wire [0:39] dma_varray_dat_r;
@@ -131,7 +135,8 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(40)) dma_varray (
   .dat_r(dma_varray_dat_r),
   .is_new_superscalar_group(dma_varray_is_new_superscalar_group),
 
-  .varray_len(varr_len[INSTR_TYPE_RAM])
+  .varray_len(varr_len[INSTR_TYPE_RAM]),
+  .queue_almost_full(varr_queue_almost_full[INSTR_TYPE_RAM])
 );
 
 // Do some post processing on the varray elements
@@ -204,7 +209,8 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(10)) math_varray (
   .dat_r(math_varray_dat_r),
   .is_new_superscalar_group(math_varray_is_new_superscalar_group),
 
-  .varray_len(varr_len[INSTR_TYPE_ARITHMETIC])
+  .varray_len(varr_len[INSTR_TYPE_ARITHMETIC]),
+  .queue_almost_full(varr_queue_almost_full[INSTR_TYPE_ARITHMETIC])
 );
 
 always @(posedge clk) begin

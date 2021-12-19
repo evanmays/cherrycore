@@ -53,6 +53,7 @@ class PinnedDeviceMemorySpace():
             else:
                 np_dat = self.pinned_mem[host_addr:host_addr+SZ*SZ]
                 bytes_dat = np_dat.byteswap().tobytes()
+                print("Read request data:", bytes_dat)
                 for i in range(len(bytes_dat)):
                     byte = bytes_dat[i:i+1] # non sliced access isn't what you expect
                     self.sock.sendall(byte)

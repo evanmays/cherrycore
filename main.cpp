@@ -3,6 +3,7 @@
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 #include "CherrySim.h"
+#include <fstream>
 #include "uartsim.h"
 #include <chrono>
 #include <ctime> 
@@ -11,6 +12,8 @@
 
 #define MAX_CYCLE_CNT 10000000
 vluint64_t cycle_cnt = 0;
+
+double sc_time_stamp() { return 0; } // lol
 
 void reset(CherrySim *dut) {
     dut->sw_0 = 1;
@@ -26,8 +29,57 @@ void reset(CherrySim *dut) {
     sleep(5);
     dut->sw_0 = 0;
 }
+
+void log_instruction_queue_if_needed(CherrySim *dut, std::ofstream &wf, std::ofstream &rf) {
+    if (dut->top__DOT__queue_we) {
+        switch (dut->top__DOT__queue_instr_type)
+        {
+        case 0:
+            wf << "cisa_loadstore      ";break;
+        case 1: wf << "cisa_mem_readwrite  ";break;
+        case 2: wf << "cisa_math           ";break;
+        }
+
+        wf << dut->top__DOT__queue_copy_count;
+        wf << " insert pos " << dut->top__DOT__instruction_queue__DOT__insert_varray_pos;
+        // wf << " dma instr pos when done " << dut->top__DOT__instruction_queue__DOT__varray_pos_when_done[];
+        switch (dut->top__DOT__queue_instr_type)
+        {
+        case 0:
+            wf << " cache addr " << dut->top__DOT__cache_addr;
+            break;
+        case 1:
+            wf << " cache addr " << dut->top__DOT__cache_addr;
+            wf << " main mem addr " << (dut->top__DOT__main_mem_addr & 0x7F);
+            break;
+        }
+        wf << "\n";
+    }
+    static bool prev_re = false;
+    
+    if (prev_re) {
+        
+        bool dma_valid = dut->top__DOT____Vcellout__instruction_queue__out_dma_instr >> 21;
+        bool cache_valid = dut->top__DOT__cache_instr_stage_1 >> 20;
+        bool math_valid = dut->top__DOT__m_instr >> 13;
+        if (dma_valid || cache_valid || math_valid) {
+            rf << "dma val " << dma_valid;
+            rf << " cache val " << cache_valid << "cache reg " << (dut->top__DOT__cache_instr_stage_1 & 0x0000003);
+            rf << " math val " << math_valid;
+            rf << "\n";
+        }
+        
+    } else {
+        rf << "skipped read\n";
+    }
+    prev_re = dut->top__DOT__q_re;
+}
+
 int main(int argc, char** argv, char** env) {
-    // printf("Starting the Cherry Zero Simulator\n");
+    std::ofstream wf("iq_writes.csv", std::ios_base::app);
+    std::ofstream rf("iq_reads.csv", std::ios_base::app);
+
+    printf("Starting the Cherry Zero Simulator\n");
     CherrySim *dut = new CherrySim;
     UARTSIM *uart = new UARTSIM(1337);
     uart->setup(10416); // 50e6 hz / 4800 baud
@@ -35,7 +87,7 @@ int main(int argc, char** argv, char** env) {
     reset(dut);
     auto start = std::chrono::system_clock::now();
     int count = 0;
-    for(int i = 0; i < 50000000; i++) {// while (true) {
+    while(!dut->program_complete) { // this is wrong. It tells us when the control unit is done queing instructions not when we are done retiring instructions.
         if (count == 0 && dut->top__DOT____Vcellout__instruction_queue__out_dma_instr >> 22 > 0) {
             count++;
         } else if (count > 0 && count < 16) {
@@ -57,13 +109,16 @@ int main(int argc, char** argv, char** env) {
         dut->clk = 0;
         dut->eval();
         cycle_cnt++;
+        
+        log_instruction_queue_if_needed(dut, wf, rf);
     }
 
     auto end = std::chrono::system_clock::now();
 
     std::chrono::duration<double> elapsed_seconds = end-start;
     printf("Elapsed %lf s\n", elapsed_seconds);
-
+    wf.close();
+    rf.close();
     delete dut;
     exit(EXIT_SUCCESS);
 }

@@ -31,6 +31,7 @@ always_ff @(posedge clk) begin
         SLOT_SINGLE_TILE : begin
           cisa_load_dat_stage_2 <= single_tile_slot;
         end
+        default: cisa_load_dat_stage_2 <= single_tile_slot;
       endcase
     end
 
@@ -42,6 +43,7 @@ always_ff @(posedge clk) begin
         SLOT_SINGLE_TILE : begin
           single_tile_slot <= cisa_store_dat_stage_2;// + 3'b100;
         end
+        default: single_tile_slot <= cisa_store_dat_stage_2;// + 3'b100;
       endcase
     end
       
@@ -55,6 +57,7 @@ always_ff @(posedge clk) begin
         SLOT_SINGLE_TILE : begin
           dma_read_port_out[39:22] <= single_tile_slot; // ditto
         end
+        default: dma_read_port_out[39:22] <= single_tile_slot; // ditto
       endcase
     end
     // Stage 3
@@ -63,6 +66,7 @@ always_ff @(posedge clk) begin
         SLOT_SINGLE_TILE : begin
           single_tile_slot <= dma_write_port.dat;
         end
+        default: single_tile_slot <= dma_write_port.dat;
       endcase
     end
   end

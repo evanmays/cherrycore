@@ -10,3 +10,5 @@ svut_h.sv
 obj_dir
 notebooks
 __pycache__
+*.csv
+*.txt
