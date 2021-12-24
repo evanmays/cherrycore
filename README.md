@@ -231,7 +231,7 @@ def matmul(A):
 
 On small cherry 1 (mini edition), memory has 5 ports of width 18*4. 4 ports are for running kernels, 5th port is for DMA. 4 ports have priority. 5th port stalls a bunch. The 5th port can use reorder buffer to prevent stalls. Reorder buffer length 2 with guaranteed reorder by no more than 1 position. Simple algorithm: Use a single bit to take note on when a dma op has been ignored for one cycle or not. This should get us to maybe 5% stall rate. Can increase decode width to 4 for ~0% stall rate. I'm just guestimating on this percent but it feels accurate.
 
-DMA diagram here for Cherry on FPGA. ![https://hackmd.io/@evanmays/r1G62pQsK](https://hackmd.io/@evanmays/r1G62pQsK)
+DMA diagram here for Cherry on FPGA. [https://hackmd.io/@evanmays/r1G62pQsK](https://hackmd.io/@evanmays/r1G62pQsK)
 
 Small Cherry 1
 `100e6` bits per second @ 50MHz is 2 bits per cycle. Can't even use full 5th port.
