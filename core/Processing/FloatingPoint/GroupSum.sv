@@ -38,17 +38,21 @@ endgenerate
 //
 // Stage 1: Find largest exponent and calc if should return nan
 //
-reg [EXPONENT-1:0] E_max_1;
+reg [EXPONENT-1:0] E_max_1, intermediate_E_max_1;
 reg [WIDTH-1:0] input_array_1 [0:size-1];
-reg             should_return_nan_1; // todo: Also need checks for -inf+inf. If 2 inf appear that aren't the same sign.
-always @(posedge clk) begin
-  E_max_1 = exponent(array_in[0 +: WIDTH]);
-  should_return_nan_1 = exponent_is_max[0] & fraction(array_in[0 +: WIDTH]) !== 0;
+reg             should_return_nan_1, intermediate_should_return_nan_1; // todo: Also need checks for -inf+inf. If 2 inf appear that aren't the same sign.
+always @(*) begin
+  intermediate_E_max_1 = exponent(array_in[0 +: WIDTH]); // should we flip endian select?
+  intermediate_should_return_nan_1 = exponent_is_max[0] & fraction(array_in[0 +: WIDTH]) !== 0;
   for (integer i=1; i<size; i++) begin
-    if (exponent(array_in[i*WIDTH +: WIDTH]) > E_max_1)
-      E_max_1 = exponent(array_in[i*WIDTH +: WIDTH]);
-    should_return_nan_1 = should_return_nan_1 | (exponent_is_max[i] & fraction(array_in[i*WIDTH +: WIDTH]) !== 0);
+    if (exponent(array_in[i*WIDTH +: WIDTH]) > intermediate_E_max_1)begin
+      intermediate_E_max_1 = exponent(array_in[i*WIDTH +: WIDTH]);end
+    intermediate_should_return_nan_1 = intermediate_should_return_nan_1 | (exponent_is_max[i] & fraction(array_in[i*WIDTH +: WIDTH]) !== 0);
   end
+end
+always @(posedge clk) begin
+  E_max_1 <= intermediate_E_max_1;
+  should_return_nan_1 <= intermediate_should_return_nan_1;
 end
 generate
   for (genvar i = 0; i < size ; i = i + 1) begin
@@ -167,10 +171,9 @@ always @(posedge clk) begin
   end
 end
 
-wire should_return_zero = fraction_6 == 0;
 assign sum =  should_return_nan_6 ? {1'b1, MAX_EXPONENT, 1'b1, {(FRACTION-1){1'b0}}} :
               // should_return_inf ? {A_s ^ B_s, MAX_EXPONENT, {FRACTION{1'b0}}} :
-              should_return_zero  ? {sign_6, MIN_EXPONENT, {FRACTION{1'b0}}} :
+              should_return_zero_6 ? {sign_6, MIN_EXPONENT, {FRACTION{1'b0}}} :
                                     {sign_6, exponent_6, fraction_6};
 
 function sign (input [WIDTH-1:0] f); begin sign = f[WIDTH-1]; end endfunction

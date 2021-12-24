@@ -45,32 +45,34 @@ module Mul (
     // assign pre_prod_frac = {A_is_underflowed ? 1'b0 : 1'b1, A_f} * {B_is_underflowed ? 1'b0 : 1'b1, B_f}; // In vivado default synth/impl, on fp32 checking for underflows costs us 20 LUTs and on cherry float 9 LUTs. I didn't even try normalizing the number after.
 
     wire [EXPONENT:0] pre_prod_exp;
-    assign pre_prod_exp = A_e + B_e;
+    assign pre_prod_exp = $signed(A_e - 127) + $signed(B_e - 127); // add 1?
 
     // If MSB of product frac is 1, shift right one. Else if second MSB is 0, shift left one
     // TODO: Do we need rounding when we cut the bits off? Or is it ok to always round down in AI?
-    wire [EXPONENT-1:0] oProd_e;
+    wire [EXPONENT:0] intermediate_Prod_e;
+    wire [EXPONENT-1:0] oProd_e = intermediate_Prod_e + 127;
     wire [MANTISSA-1:0] oProd_f;
     wire need_mantissa_left_shift = pre_prod_frac[(MANTISSA+1)*2-2];
     wire need_mantissa_right_shift = pre_prod_frac[(MANTISSA+1)*2-1];
-    assign oProd_e = need_mantissa_right_shift
-        ? (pre_prod_exp-9'd126)
-        : need_mantissa_left_shift
-            ? (pre_prod_exp-9'd127)
-            : (pre_prod_exp-9'd126);
+    assign intermediate_Prod_e = need_mantissa_right_shift
+        ? (pre_prod_exp+1'b1)
+        // : need_mantissa_left_shift
+        //     ? (pre_prod_exp-1'b1)
+            : (pre_prod_exp);
     assign oProd_f = need_mantissa_right_shift
-        ? pre_prod_frac[(MANTISSA+1)*2-2:MANTISSA+1]
-        : need_mantissa_left_shift
-            ? pre_prod_frac[(MANTISSA+1)*2-3:MANTISSA]
-            : pre_prod_frac[(MANTISSA+1)*2-4:MANTISSA-1];
+        ? pre_prod_frac[(MANTISSA+1)*2-2 -:MANTISSA]
+        // : need_mantissa_left_shift
+        //     ? pre_prod_frac[(MANTISSA+1)*2-3:MANTISSA]
+            : pre_prod_frac[(MANTISSA+1)*2-3 -:MANTISSA];
 
     // Detect underflow
-    wire underflow = pre_prod_exp < {1'b0, 1'b1, {EXPONENT-2{1'b0}}};  // 128. Second most signficant bit is 1
+    wire underflow = $signed(intermediate_Prod_e) < -126;  // is this synthesizing properly?
+    wire overflow  = $signed(intermediate_Prod_e) > 128;
+
     // Should special cases come first?
-    assign OUT = underflow        ? {WIDTH{1'b0}} : // is this a flush to zero?
-                   should_return_nan ? {1'b1, MAX_EXPONENT, 1'b1, {(MANTISSA-1){1'b0}}} :
-                   should_return_inf ? {A_s ^ B_s, MAX_EXPONENT, {MANTISSA{1'b0}}} :
-                   should_return_zero ? {A_s ^ B_s, {WIDTH-1{1'b0}}} :
+    assign OUT =   should_return_nan                ? {1'b1, MAX_EXPONENT, 1'b1, {(MANTISSA-1){1'b0}}} :
+                   underflow | should_return_zero   ? {A_s ^ B_s, {(WIDTH-1){1'b0}}} :
+                   should_return_inf | overflow     ? {A_s ^ B_s, MAX_EXPONENT, {MANTISSA{1'b0}}} :
                    {A_s ^ B_s, oProd_e, oProd_f};
 
 endmodule

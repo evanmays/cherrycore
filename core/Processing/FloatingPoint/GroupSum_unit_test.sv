@@ -122,6 +122,19 @@ module GroupSum_testbench();
         $display("%b %d", dut.mantissa_5, dut.exponent_6);
     `UNIT_TEST_END
 
+    `UNIT_TEST("EDGE")
+        array_in = 72'b010000010001000000010000010001000000010000010001000000010000001000000000;
+        repeat(6)
+            @(posedge clk); #2
+        `ASSERT((dut.fraction_6 === 9'b111100000)); //off by .02? cost of lost lost precision i guess
+        `ASSERT((dut.exponent_6 === 131));
+        `ASSERT((dut.sign_6 === 0));
+        $display("%b %d", dut.fraction_6, dut.exponent_6);
+        @(posedge clk); #2
+        $display("%b %d", dut.fraction_6, dut.exponent_6);
+        @(posedge clk); #2
+        $display("%b %d", dut.fraction_6, dut.exponent_6);
+    `UNIT_TEST_END
 
     `UNIT_TEST("LESS_SIMPLE_ADD")
         array_in = {{2{cherry_float(32'h3f9d70a4)}}, {2{cherry_float(32'h403f5c29)}}}; // [1.23, 1.23, 2.99, 2.99]. but 0 index on right.
