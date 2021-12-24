@@ -231,14 +231,15 @@ def matmul(A):
 
 On small cherry 1 (mini edition), memory has 5 ports of width 18*4. 4 ports are for running kernels, 5th port is for DMA. 4 ports have priority. 5th port stalls a bunch. The 5th port can use reorder buffer to prevent stalls. Reorder buffer length 2 with guaranteed reorder by no more than 1 position. Simple algorithm: Use a single bit to take note on when a dma op has been ignored for one cycle or not. This should get us to maybe 5% stall rate. Can increase decode width to 4 for ~0% stall rate. I'm just guestimating on this percent but it feels accurate.
 
+DMA diagram here for Cherry on FPGA. ![https://hackmd.io/@evanmays/r1G62pQsK](https://hackmd.io/@evanmays/r1G62pQsK)
+
 Small Cherry 1
-`100e6` bits per second @ 50MHz is 2 bits per cycle. Can't even use full 5th port. Must have a hardware generated mask
+`100e6` bits per second @ 50MHz is 2 bits per cycle. Can't even use full 5th port.
 
 Big Cherry 1
-`8*12e9` bits per second @ 500MHz is 192 bits per cycle. But now port is `16*18=288` bits wide. Still can't use full port. Must have a hardware generated mask
+`8*12e9` bits per second @ 500MHz is 192 bits per cycle. But now port is `16*18=288` bits wide.
 
 Cherry 2
-`8*12e9` bits per second @ 500MHz is 192 bits per cycle. But now port is `32*18=576` bits wide. Still can't use full port. Must have a hardware generated mask. Even with next gen PCIE still need mask.
+`8*256e9` bits per second @ 1GHz is 2048 bits per cycle. But now port is `32*18=576` bits wide. This device won't use DMA. I estimate it needs 256GB/s to keep compute to memory bandwidth ratio the same as big cherry 1.
 
-TODO:
-* Can we add this 5th port? Does a mask work? Can we keep the fifth port and other DMA stuff under 5% LUT usage?
+Maybe make 5th port just a full sized port. Or, combine it with another port and do some arbitration.
