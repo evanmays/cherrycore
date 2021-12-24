@@ -43,10 +43,52 @@ contributing is hard right now
 * yosys
 * nextpnr-xilinx if you want to place and route to check for timing
 * Verilator. Instructions here https://verilator.org/guide/latest/install.html
+More build notes here https://github.com/geohot/tinygrad/blob/master/accel/cherry/build.sh
 ```sh
 brew install icarus-verilog # Yes, even on linux
 # add yosys
-# add nextpnr-xilinx which has way more steps than you'd expect
+# nextpnr-xilinx might have more steps for mac i think
+cd ~/cherry
+git clone https://github.com/gatecat/nextpnr-xilinx.git
+cd nextpnr-xilinx
+git submodule init
+git submodule update
+# we skip some of the prjxray steps since we dont use vivado
+cd ..
+git clone git@github.com:SymbiFlow/prjxray.git
+cd prjxray
+git submodule update --init --recursive
+sudo apt-get install cmake
+make build
+# sudo apt-get install virtualenv python3 python3-pip python3-virtualenv python3-yaml python3.8-venv
+# make env
+sudo -H pip3 install -r requirements.txt
+
+cd ../nextpnr-xilinx
+
+# if you get errors about boost
+sudo apt-get install libboost-dev libboost-filesystem-dev libboost-thread-dev libboost-program-options-dev libboost-python-dev libboost-dev libboost-all-dev
+# if you get errors about eigen
+sudo apt install libeigen3-dev
+
+
+
+cmake -DARCH=xilinx -DBUILD_GUI=no -DBUILD_PYTHON=no -DUSE_OPENMP=No .
+make
+python3 xilinx/python/bbaexport.py --device xc7a100tcsg324-1 --bba xilinx/xc7a100t.bba
+./bbasm -l xilincx/xc7a100t.bba xilinx/xc7a100t.bin
+
+sudo apt install openocd
+```
+
+Test on your hardware with
+```
+# plug in arty to computer over usb
+# Might need to unplug and plug in if not found
+# also need to install ftdi VCP drivers https://ftdichip.com/drivers/vcp-drivers/
+# linux driver install guide says linux kernel has VCP built in https://ftdichip.com/wp-content/uploads/2020/08/AN_220_FTDI_Drivers_Installation_Guide_for_Linux-1.pdf
+cd ~/cherry/cherrycore
+./test_a7100t_relu.sh
 ```
 
 ### Setup Development Environment
