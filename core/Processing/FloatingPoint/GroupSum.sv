@@ -158,9 +158,11 @@ reg [FRACTION-1:0] fraction_6;
 reg [EXPONENT-1:0] exponent_6;
 reg                sign_6;
 reg               should_return_nan_6;
+reg               should_return_zero_6;
 always @(posedge clk) begin
   sign_6 <= output_sign_5;
   should_return_nan_6 <= should_return_nan_5;
+  should_return_zero_6 <= leading_zero_count_5 == 13;
   if (leading_zero_count_5 > 4'd3) begin // could also do >= 3
     fraction_6 <= mantissa_5[9:0] << (4'd13 - leading_zero_count_5);
     exponent_6 <= exponent_5 - (4'd13 - leading_zero_count_5);
