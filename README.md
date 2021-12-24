@@ -2,16 +2,23 @@
 
 ![Indicator of if Unit Tests workflow are passing](https://github.com/evanmays/cherrycore/actions/workflows/SVUT.yml/badge.svg)
 
-A deep learning training core. First ~~on paper~~, then in verilog, then on FPGA. The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
+A deep learning training core. First ~~on paper~~, then in verilator, then on FPGA. The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
 
-ISA in Cherry ISA.pdf
-Superscalar notes below
+I've got some weak stuff running on actual hardware. Train MNIST this year?
+
+# Intruction Set Architecture
+Notes in `ISA in Cherry ISA.pdf` and `experiments/compiler/assembler.py`
 
 Same cache bandwidth as a 3090 but due to the larger tile size we have 4x the arithmetic intensity on cache transfers. So, once data is on chip, the programs complete in a quarter the time.
 
+Users can specify certain loops to have the loop bodies run in parallel. These parallel runs of the loops each have their own regfiles.
+
+## Microarchitecture
 There are 3 functional units all pipelined individually so they may in total complete 3 instructions per cycle. The first functional unit deals with cisa_mem_write and cisa_mem_read instructions. It's transfering data between device memory and device cache. The second functional unit supports cisa_load and cisa_store. It transfers data between device cache and the regfile. The third functional unit deals with all of our arithmetic insturctions. There are your cisa_matmul, cisa_relu, etc.
 
-To feed the three pipelines 3 instructions per cycle, we have an instruction queue. On the other end of that queue is an out of order superscalar control unit. This unit is much simpler than most other superscalars. It utilizes the knowledge that ML programs are all loops. The programmer can replace a python range() function with cherry_range() and our superscalar unit will then treat each loop body as a thread allowing it to parallelize things. Since the programs aren't turing complete, we can make a perfect branch predictor and prefetch all cisa_mem_read instructions. There's also a program cache that can hold all the programs a forward and back pass would need (a few KB). And a program exection queue which allows the host device to schedule programs.
+We feed the pipelines from an instruction queue. The instruction queueu is fed by the control unit. This unit is much simpler than most other superscalars. It utilizes the knowledge that ML programs are all loops. The programmer can replace a python range() function with cherry_range() and our superscalar unit will then treat each loop body as a thread allowing it to parallelize things. The control unit creates just 16 threads. This is enough to hide latency. Since the programs aren't turing complete, we can make a perfect branch predictor and prefetch all cisa_mem_read instructions.
+
+There's also a program cache that can hold all the programs a forward and back pass would need (a few KB). And a program exection queue which allows the host device to schedule programs.
 
 4 slots of memory, each one has different access pattern support. Need to find a balance of slots that do 0D, 1D, 3D and ND striding. The trick with ND striding will be to signifantly reduce cache bandwidth. So, maybe a programer can load a 32x32 tile (1024 elements) with 1D striding. But, if they want 3D striding then they can only load a 3x3x3 cube (27 elements). Notice we went from 1024 elements to 27. But if you had kept 1D striding you probably woudn't be able to get max utilization on the 1024 elements anyway. Supporting arithmetic on cubes instead of tiles should be cheap although we can probably only afford 1 or 2 cube sizes options. Need more example conv2d programs to pick exactly what we want to support here. Perhaps on cherry 3 one slot should be shared across cores and broadcast its reads to all cores.
 
@@ -27,16 +34,9 @@ Original Cherry 2 and 3 master plan [written by geohot here](https://github.com/
 1. Cherry 2 stays the same. It's just a tapeout of the Big Cherry 1
 2. Cherry 3 is the AI Training Card for your desktop and for real production model training (no GPT-3 fine tuning sorry). It's got half a petaflop peak TF32 performance and high flop utilization. 8 cores instead of 16. 1024 GB/s VRAM instead of 512.
 
-# Status (Tiny Cherry 1)
-Cherry Inference Chip Works on a7100t. Tested on macOS plugged in to a7100t over usb.
-
-Current tiny cherry 1 in `core/top.sv` can run a hard coded relu program! It doesn't have a superscalar control unit so it's super low performance. But, it will successfully do a dma read from the host computer (over USB UART), apply ReLU, then send the result back to the host computer. The DMAs are driven by the cherry, the host computer simply waits and listens. You can see this host pc listener in `dma_host_test.py`.
-
-Prerequisites aren't documented but the script that synthesizes, place-n-routes, uploads the bitstream, and runs a test python program is `./test_a7100t_relu.sh`
-
-Next step is to implement the instruction queue so we can integrate control unit with the execution pipelines. Then add a hardcoded program cache similar to the control unit unit test module. Put a bunch of programs in there. Add a program execution queue that can be DMA'd into from python. Implement the rest of the unary ops. Now python can drive the fpga and run the hardcoded programs (just activation functions for now) Can start integrating with tinygrad and/or pytorch. (`torch.ones((10,10), device=Cherry).relu()` should work)
-
 # Contributors Getting Started
+
+contributing is hard right now
 
 ### Prerequisites (MacOS & linux... sry Windows)
 * icarus-verilog 
@@ -98,8 +98,6 @@ This is super cheap to implement in hardware. Hopefully, under 1,500 of our 64,0
 Superscalar implementation in `experiments/superscalar.py`. Can play around with different latencies for matmul or memory accesses. Can also play around with different superscalr widths. In hardware, increasing superscalar with is almost free for us on FPGA.
 
 More info (and example code for `cherry_range()` in the compiler section.
-
-We also take advantage of the immutability of tensor objects to prefetch data. More here [memory model doc](memory_model.md)
 
 # Tensor Cores
 
@@ -185,11 +183,11 @@ Basic example in `experiments/compiler`
 
 Compiles code written in python to the Cherry ISA.
 
-Take code from tiny grad, add a `@cherry_kernel` decorator to a function and replace a `for i in range(n)` with `for i in cherry_range(n)`.
+Take code from tiny grad, add a `@cherry_program` decorator to a function and replace a `for i in range(n)` with `for i in cherry_range(n)`.
 
-`cherry_range()` the Cherry device can run the loop iterations out of order and concurrently. So the loop body iterations must be independent. This helps with latency. This is easy because loop iteration only affects memory addresses and strides which are both linear functions of loop iteration variables. Loop controller and it's APUs (Address Processing Units) take care of this.
+`cherry_range()` the Cherry device can run the loop iterations out of order and concurrently. So the loop body iterations must be independent. Usually this means two iterations must not rely on eachothers register data. This helps with latency.
 
-If max instruction latency is 4, then we want our superscalar to execute loop iterations instructions concurrently.
+This is easy because loop iteration only affects memory addresses and strides which are both linear functions of loop iteration variables. The control unit takes care of loop instructions and address calculation as a linear function of the loop variables.
 
 Programs must be recompiled if their input tensors change shape. So if you have 3 matrices, A, B, C.
 
@@ -201,36 +199,31 @@ A @ B @ C # matrix multiply twice
 ```
 This requires two matmul programs uploaded to Cherry device. One is for input tensors of shape `(10,100)` and `(100,200)` the other is for input tensors of shape `(100,200)` and `(200,10)`. Of course, both programs that were uploaded had the same high level source code written in python.
 
-If the community sees a lot of people multipliying groups of 3 matrices, maybe someone will write a high level python program to multiply 3 matrices instead of 2. Then this code would only need to compile and be uploaded to the cherry once. This should be easy since writing code for Cherry is easy if you have a good algorithm. The new kernel even saves memory bandwidth. I suspect memory bandwidth will be a common usecase for creating new kernels. 
+If the community sees a lot of people multipliying groups of 3 matrices, maybe someone will write a high level python program to multiply 3 matrices instead of 2. Then this code would only need to compile and be uploaded to the cherry once. This should be easy since writing code for Cherry is easy if you have a good algorithm. The new kernel saves cache bandwidth and may save memory bandwidth.
 
-These kernels can be open sourced and shared in a community kernel repo.
+These programs can be open sourced and shared in a community kernel repo.
 
-Details on the memory model when writing cherry programs that have multiple inputs (and multiple outputs which are needed for backprop). [memory model doc](memory_model.md)
+There's todo's sprawled around the `experiments/compiler` folder. Some larger projects
 
+Migrating to c/c++ compiler/assembler.
+* Rewrite the sympy library in c or c++. Just need the parts that we use.
+* Rewrite the bit packing library in c or c++. Just need the parts that we use.
+* Need to think about how we can have an interface as nice as `cherry_range` in c/c++. Maybe need custom intepreter so programs can still be written in a pseudo-python
 
-TODO:
-* Support the entire instruction set
-* Create assembler
-* More todo's in the `experiments/compiler/compiler.py`
-* Allow kernels to have metadata saying when to replace another sequence of kernels with the new kernel. i.e.
+Usability improvements
+* Notify user when they try to access a register outside of a `cherry_range` loop
+* Write a script that auto finds the best spot for a `cherry_range` to go. This can assist noobs
+* Write good error messages for all the `cisa_*` functions
+* Document all the things
 
 ```python
-@cherry_kernel
-def matmul_two(A, B):
-     for i in cherry_range(A.shape * B.shape):
+@cherry_program
+def matmul(A):
+     # Each iteration of this loop has no dependency on a previous iteration
+     # Therefore, we use cherry_range to run the iterations in parallel
+     for i in cherry_range(np.prod(A.shape)):
           load
-          load
-          matmul
-          store
-
-@cherry_kernel(sequence_to_replace[matmul_two, matmul_two])
-def matmul_three(A, B, C):
-     for i in cherry_range(A.shape * B.shape * C.shape):
-          load
-          load
-          matmul
-          load
-          matmul
+          relu
           store
 ```
 
