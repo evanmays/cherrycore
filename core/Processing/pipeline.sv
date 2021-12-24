@@ -2,7 +2,7 @@ module math_pipeline(
   input                           clk,
   input                           freeze,
   input                           reset,
-  input   math_instr  instr,
+  input   math_instr              instr,
 
   // Stage 1
   output  reg [0:5]             regfile_read_addr,
@@ -22,10 +22,10 @@ reg [17:0] stage_3_dat;
 always @(posedge clk) begin
   if (!freeze) begin
     //
-    // Stage 1: Initiate Read register
+    // Stage 1: Initiate Read register. (Delete this, it can be done combinatorially) Maybe can just turn these into assign statements for fast testing and to keep all the logic in the right place
     //
     instr_1 <= instr;
-    if (instr.valid) regfile_read_addr <= {instr.superscalar_thread, REG_MATMUL_INPUT}; // TODO: add thread here
+    if (instr.valid) regfile_read_addr <= {instr.superscalar_thread, REG_MATMUL_INPUT};
 
     //
     // Stage 2: Allow Regfile to do the Read
