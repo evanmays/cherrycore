@@ -10,6 +10,7 @@ wire                freeze;
 assign freeze = dma_busy;
 assign led[1] = freeze;
 //assign led[5] = queue_empty;
+assign program_complete = prog_end_instr_valid & !freeze;
 assign led[2] = dma_stage_3_dcache_write.raw_instr_data.valid;
 wire                  queue_empty;
 
@@ -20,6 +21,7 @@ dma_stage_3_instr   dma_stage_3_dcache_write;
 wire          dma_busy;
 regfile_instruction cache_instr_stage_1, cache_load_instr_stage_2, cache_store_instr_stage_2;
 math_instr          m_instr;
+wire prog_end_instr_valid;
 always @(posedge clk) begin
   if (sw_0) begin
     cache_store_instr_stage_2 <= 0;
@@ -47,6 +49,7 @@ instruction_queue instruction_queue (
   .out_dma_instr(dma_stage_1_dcache_read),
   .out_math_instr(m_instr),
   .out_cache_instr(cache_instr_stage_1),
+  .out_prog_end_valid(prog_end_instr_valid),
   .empty(queue_empty),
 
   // Push
@@ -71,7 +74,6 @@ control_unit #(4) control (
   .clk(clk),
   .reset(sw_0),
 
-  .program_complete(program_complete),
 
   .raw_instruction(raw_instruction),
   .pc(pc),

@@ -216,7 +216,7 @@ end
 
 
 uart_tx #(
-.BIT_RATE(4800),
+.BIT_RATE(19200),
 .PAYLOAD_BITS(8),
 .CLK_HZ  (CLK_HZ  )
 ) i_uart_tx(
@@ -229,7 +229,7 @@ uart_tx #(
 );
 
 uart_rx #(
-.BIT_RATE(4800),
+.BIT_RATE(19200),
 .PAYLOAD_BITS(8),
 .CLK_HZ  (CLK_HZ  )
 ) i_uart_rx(

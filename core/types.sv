@@ -63,6 +63,7 @@ parameter INSTR_TYPE_LOAD_STORE   = 2'd0;
 parameter INSTR_TYPE_RAM          = 2'd1;
 parameter INSTR_TYPE_ARITHMETIC   = 2'd2;
 parameter INSTR_TYPE_LOOP         = 2'd3;
+parameter INSTR_TYPE_PROG_END         = 2'd3; // instr type 3 is loop in control unit and in instruction queue it's program end marker
 
 typedef struct packed {
   reg is_new_loop;

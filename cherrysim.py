@@ -13,7 +13,7 @@ class PinnedDeviceMemorySpace():
         self.pinned_mem = np.zeros((128,), dtype=np.float16)
         self.pinned_mem[120] = 15.0
         a = 120.0
-        for i in range(16, 16+16*4, 4):
+        for i in range(16, 128, 4):
             a += 1.0
             self.pinned_mem[i] = a if not i % 16 == 0 else -a
         print("pinned mem start")

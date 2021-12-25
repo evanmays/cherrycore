@@ -16,12 +16,13 @@ module instruction_queue (
   output dma_instruction        out_dma_instr,
   output math_instr             out_math_instr,
   output regfile_instruction    out_cache_instr,
+  output logic                  out_prog_end_valid,
   output logic                   empty,
 
   // Push
   input logic                                   we,
   input logic [1:0]                             in_instr_type,
-  input logic [LOG_SUPERSCALAR_WIDTH:0]         copy_count,
+  input logic [LOG_SUPERSCALAR_WIDTH:0]         copy_count, // ignored for prog end instruction
   input logic [10:0]                            cache_addr, d_cache_addr,
   input logic [6:0]                             main_mem_addr, d_main_mem_addr,
   input logic [0:8]                             in_arith_instr,
@@ -36,13 +37,21 @@ localparam [4:0] SUPERSCALAR_WIDTH = 16;
 localparam [3:0] DMA_INSTRUCTION_LATENCY = 4; // 2 too small. maybe 3 works?
 localparam REGFILE_INSTRUCTION_LATENCY = 3;
 localparam ARITH_INSTRUCTION_LATENCY = 10;
+localparam PROG_END_INSTRUCTION_LATENCY = 1;
 localparam VARRAY_POS_BITS = 16;
 
 reg [1:0]  prev_instr_type;
-reg [VARRAY_POS_BITS-1:0] next_free_spot_in_varray [0:2];
-reg [VARRAY_POS_BITS-1:0] varray_pos_when_done [0:2];
+reg [VARRAY_POS_BITS-1:0] next_free_spot_in_varray [0:3];
+reg [VARRAY_POS_BITS-1:0] varray_pos_when_done [0:3];
 
-wire [VARRAY_POS_BITS-1:0] insert_varray_pos = max(
+wire [VARRAY_POS_BITS-1:0] insert_varray_pos = in_instr_type == INSTR_TYPE_PROG_END
+                                              ? max4(
+                                                varr_len[INSTR_TYPE_LOAD_STORE] + latency(INSTR_TYPE_LOAD_STORE),
+                                                varr_len[INSTR_TYPE_RAM] + latency(INSTR_TYPE_RAM),
+                                                varr_len[INSTR_TYPE_ARITHMETIC] + latency(INSTR_TYPE_ARITHMETIC),
+                                                varr_len[INSTR_TYPE_PROG_END] + latency(INSTR_TYPE_PROG_END)
+                                              )
+                                              : max(
                                                 varray_pos_when_done[prev_instr_type],
                                                 next_free_spot_in_varray[in_instr_type],
                                                 varray_read_pos + 1 // add 1 since write has 1 cycle latency and read doesn't
@@ -57,9 +66,11 @@ always @(posedge clk) begin
     next_free_spot_in_varray[INSTR_TYPE_RAM] <= 0;
     next_free_spot_in_varray[INSTR_TYPE_LOAD_STORE] <= 0;
     next_free_spot_in_varray[INSTR_TYPE_ARITHMETIC] <= 0;
+    next_free_spot_in_varray[INSTR_TYPE_PROG_END]   <= 0;
     varray_pos_when_done[INSTR_TYPE_RAM] <= 0;
     varray_pos_when_done[INSTR_TYPE_LOAD_STORE] <= 0;
     varray_pos_when_done[INSTR_TYPE_ARITHMETIC] <= 0;
+    varray_pos_when_done[INSTR_TYPE_PROG_END] <= 0;
     varray_read_pos <= 0;
   end else begin
     if (we) begin
@@ -78,6 +89,13 @@ function [VARRAY_POS_BITS-1:0] max;
 	end
 endfunction
 
+function [VARRAY_POS_BITS-1:0] max4;
+	input [VARRAY_POS_BITS-1:0] a, b, c, d;
+	begin
+    max4 = a > b ? (a > c ? (a > d ? a : d) : (c > d ? c : d)) : (b > c ? (b > d ? b : d) : (c > d ? c : d));
+	end
+endfunction
+
 function [3:0] latency;
   input [1:0] instr_type;
   begin
@@ -91,12 +109,15 @@ function [3:0] latency;
       INSTR_TYPE_ARITHMETIC: begin
         latency = ARITH_INSTRUCTION_LATENCY;
       end
+      INSTR_TYPE_PROG_END: begin
+        latency = PROG_END_INSTRUCTION_LATENCY;
+      end
     endcase
   end
 endfunction
 
-logic [15:0] varr_len [0:2];
-logic  [0:2] varr_queue_almost_full;
+logic [15:0] varr_len [0:3];
+logic  [0:3] varr_queue_almost_full;
 assign stall_push = |varr_queue_almost_full;
 
 wire [0:29] cache_varray_dat_r;
@@ -146,7 +167,10 @@ always @(posedge clk) begin
     out_math_instr <= 0;
     out_dma_instr <= 0;
     out_cache_instr <= 0;
+    out_prog_end_valid <= 0;
   end else if (re) begin
+    // Prog End Out
+    out_prog_end_valid <= prog_complete_varray_dat_r;
     // Math Instruction Out
     out_math_instr.valid <= math_varray_dat_r[0];
     out_math_instr.category <= math_varray_dat_r[1:3];
@@ -190,6 +214,7 @@ always @(posedge clk) begin
     out_cache_instr.valid <= 0;
     out_math_instr.valid <= 0; // must we zero entire thing to prevent x propagation?
     out_dma_instr.valid <= 0;
+    out_prog_end_valid <= 0;
   end
 end
 
@@ -213,9 +238,27 @@ varray #(.VIRTUAL_ELEMENT_WIDTH(10)) math_varray (
   .queue_almost_full(varr_queue_almost_full[INSTR_TYPE_ARITHMETIC])
 );
 
+wire prog_complete_varray_dat_r;
+varray #(.VIRTUAL_ELEMENT_WIDTH(1))  prog_complete_varray (
+  .clk(clk),
+  .reset(reset),
+
+  .we(we && in_instr_type == INSTR_TYPE_PROG_END),
+  .write_addr(insert_varray_pos),
+  .write_addr_len(1),
+  .dat_w(1),
+
+  .re(re),
+  .read_addr(varray_read_pos),
+  .dat_r(prog_complete_varray_dat_r),
+
+  .varray_len(varr_len[INSTR_TYPE_PROG_END]),
+  .queue_almost_full(varr_queue_almost_full[INSTR_TYPE_PROG_END])
+);
+
 always @(posedge clk) begin
   if (re)
-    empty <= varray_read_pos >= varr_len[INSTR_TYPE_LOAD_STORE] & varray_read_pos >= varr_len[INSTR_TYPE_RAM] & varray_read_pos >= varr_len[INSTR_TYPE_ARITHMETIC]; // need +1 on pos?
+    empty <= varray_read_pos >= varr_len[INSTR_TYPE_LOAD_STORE] & varray_read_pos >= varr_len[INSTR_TYPE_RAM] & varray_read_pos >= varr_len[INSTR_TYPE_ARITHMETIC] & varray_read_pos >= varr_len[INSTR_TYPE_PROG_END]; // need +1 on pos? // replace with max4 and one comparison?
   if (we)
     empty <= copy_count == 1 && re ? empty : 0;
   if (reset)

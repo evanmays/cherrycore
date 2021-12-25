@@ -82,12 +82,13 @@ int main(int argc, char** argv, char** env) {
     printf("Starting the Cherry Zero Simulator\n");
     CherrySim *dut = new CherrySim;
     UARTSIM *uart = new UARTSIM(1337);
-    uart->setup(10416); // 50e6 hz / 4800 baud
+    const int cyclesPerBit = 2604; // 50e6 hz / 19200 baud
+    uart->setup(cyclesPerBit);
     // printf("%d", uart->m_setup);
     reset(dut);
     auto start = std::chrono::system_clock::now();
     int count = 0;
-    while(!dut->program_complete) { // this is wrong. It tells us when the control unit is done queing instructions not when we are done retiring instructions.
+    while(!dut->program_complete) {
         if (count == 0 && dut->top__DOT____Vcellout__instruction_queue__out_dma_instr >> 22 > 0) {
             count++;
         } else if (count > 0 && count < 16) {
@@ -111,6 +112,11 @@ int main(int argc, char** argv, char** env) {
         cycle_cnt++;
         
         log_instruction_queue_if_needed(dut, wf, rf);
+    }
+    for(int i = 0; i < 100*cyclesPerBit; i++) {
+        // need to keep tcp link running so it can finish its job.
+        // not actually sure if we need this but easier to be safe than read the uartsim.cpp code
+        (*uart)(1);
     }
 
     auto end = std::chrono::system_clock::now();

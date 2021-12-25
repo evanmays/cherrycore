@@ -16,13 +16,13 @@
 // 		 initiate prefetch
 // 	 calculate instruction queue copy amount and put in queue (also get the apu values if needed)
 //   update pc and break loop if pc > program_instr_count
-// notify host computer of completion
+//   notify host computer of completion (happens when instruction queue pops the end of program marker from the queue)
 module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   input               clk,
   input               reset,
 
   // Program execution queue ports
-  output reg          program_complete,
+  input               start_prog, // todo: support
   output reg [6:0]    program_header_cache_addr,
 
   // Instruction Fetch ports (fetch and decode happen in same cycle. so can't register the icache output)
@@ -46,7 +46,7 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
 
   output logic program_error
 );
-enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM} S;
+enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM_1, FINISH_PROGRAM_2} S;
 
 // Info about current program
 reg [15:0]  program_end_pc;
@@ -83,7 +83,6 @@ always @(posedge clk) begin
   case (S)
     IDLE: begin
       S <= PREPARE_PROGRAM_0;
-      program_complete <= 0;
       ro_data_addr <= 0;
     end
     PREPARE_PROGRAM_0: begin
@@ -180,11 +179,16 @@ always @(posedge clk) begin
       queue_we <= 0;
       pc <= pc + 1 - jump_amount;
       jump_amount <= 0;
-      S <= (pc + 1 - jump_amount) >= program_end_pc ? FINISH_PROGRAM
+      S <= (pc + 1 - jump_amount) >= program_end_pc ? FINISH_PROGRAM_1
                                                     : DECODE;
     end
-    FINISH_PROGRAM: begin
-      program_complete <= 1;
+    FINISH_PROGRAM_1: if (!instr_queue_stall_push) begin
+      queue_we <= 1;
+      queue_instr_type  <= INSTR_TYPE_PROG_END;
+      S <= FINISH_PROGRAM_2;
+    end
+    FINISH_PROGRAM_2: begin
+      queue_we <= 0;
       // S <= IDLE;
     end
   endcase
@@ -214,7 +218,6 @@ always @(posedge clk) begin
     queue_we <= 0;
     queue_instr_type <= 0;
     queue_copy_count <= 0;
-    program_complete <= 0;
   end
 end
 
