@@ -1,7 +1,7 @@
 // Can save signfiicant LUTs by decreasing LINE
  // Can push up to 4 elements per cycle
  // Can pop up to 1 element per cycle
- module superscalar_fifo #(parameter LINE=18)(
+ module prefetch_initiate_superscalar_fifo #(parameter LINE=18)(
    input clk,
    input reset,
    input re,
