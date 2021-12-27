@@ -6,6 +6,7 @@ output  wire        uart_txd,  // UART transmit pin.
 output  wire [7:0]  led,
 output  wire        program_complete
 );
+parameter SZ = 4;
 wire                freeze;
 assign freeze = dma_busy;
 assign led[1] = freeze;
@@ -122,8 +123,8 @@ dma_uart dma (
 
 );
 
-wire [17:0] cache_load_dat_stage_2, cache_store_dat_stage_2;
-dcache dcache (
+wire [SZ*SZ*18-1:0] cache_load_dat_stage_2, cache_store_dat_stage_2;
+dcache #(.TILE_WIDTH(SZ*SZ*18)) dcache (
 .clk(clk),
 .freeze(freeze),
 .cisa_load_instr_stage_1  (cache_instr_stage_1),
@@ -138,9 +139,9 @@ dcache dcache (
 );
 
 wire [0:5] processing_read_addr_regfile, processing_write_addr_regfile;
-wire [17:0] processing_regfile_dat_r, processing_regfile_dat_w;
+wire [SZ*SZ*18-1:0] processing_regfile_dat_r, processing_regfile_dat_w;
 wire processing_regfile_we;
-regfile #(.LOG_SUPERSCALAR_WIDTH(4), .REG_WIDTH(18)) regfile(
+regfile #(.LOG_SUPERSCALAR_WIDTH(4), .REG_WIDTH(SZ*SZ*18)) regfile(
 .clk(clk),
 .reset(sw_0),
 .freeze(freeze),
@@ -148,7 +149,7 @@ regfile #(.LOG_SUPERSCALAR_WIDTH(4), .REG_WIDTH(18)) regfile(
 .port_a_out(processing_regfile_dat_r),
 .port_c_we(processing_regfile_we), // .port_c_we(1'd1),
 .port_c_write_addr(processing_write_addr_regfile),//.port_c_write_addr(4'd0),
-.port_c_in(processing_regfile_dat_w), // .port_c_in(18'd150),
+.port_c_in(processing_regfile_dat_w),
 .port_b_read_addr({cache_instr_stage_1.superscalar_thread, cache_instr_stage_1.regfile_reg}),
 .port_b_out(cache_store_dat_stage_2),
 .port_d_we(cache_load_instr_stage_2.valid && cache_load_instr_stage_2.is_load), // fun fact: if you make a typo and instead type cache_load_instr_stage_2.is_load.valid the compiler wont say anything!!!
@@ -156,7 +157,7 @@ regfile #(.LOG_SUPERSCALAR_WIDTH(4), .REG_WIDTH(18)) regfile(
 .port_d_in(cache_load_dat_stage_2)
 );
 
-math_pipeline processing_pipeline(
+math_pipeline #(.SZ(SZ)) processing_pipeline(
 .clk(clk),
 .reset(sw_0),
 .freeze(freeze),

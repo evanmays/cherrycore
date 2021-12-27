@@ -117,7 +117,7 @@ function [3:0] latency;
 endfunction
 
 logic [15:0] varr_len [0:3];
-logic  [0:3] varr_queue_almost_full;
+logic  [3:0] varr_queue_almost_full;
 assign stall_push = |varr_queue_almost_full;
 
 wire [0:29] cache_varray_dat_r;

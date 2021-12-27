@@ -15,12 +15,12 @@ typedef struct packed {
 } dma_stage_1_instr; // Used in stage 1: Read cache
 
 typedef struct packed {
-  logic       [17:0]  dat;
+  logic       [287:0]  dat;
   dma_instruction     raw_instr_data;
 } dma_stage_2_instr; // Used in stage 2: Execute DMA
 
 typedef struct packed {
-  logic       [17:0]  dat;
+  logic       [287:0]  dat;
   dma_instruction     raw_instr_data;
 } dma_stage_3_instr; // Used in stage 3: Write cache
 

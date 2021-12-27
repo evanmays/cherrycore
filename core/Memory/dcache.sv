@@ -6,9 +6,9 @@ module dcache (
   // Regfile Instructions (cisa_load, cisa_store)
   input   regfile_instruction   cisa_load_instr_stage_1,
   output  regfile_instruction   cisa_load_instr_stage_2,
-  output  reg[17:0]             cisa_load_dat_stage_2,
+  output  reg[TILE_WIDTH-1:0]             cisa_load_dat_stage_2,
   input   regfile_instruction   cisa_store_instr_stage_2,
-  input   wire[17:0]            cisa_store_dat_stage_2,
+  input   wire[TILE_WIDTH-1:0]            cisa_store_dat_stage_2,
 
   // DMA Instructions (cisa_mem_read, cisa_mem_write)
   input   dma_stage_1_instr     dma_read_port_in,
@@ -16,7 +16,9 @@ module dcache (
   input   dma_stage_3_instr     dma_write_port
 );
 
-reg [17:0] single_tile_slot [0:31];
+parameter TILE_WIDTH = 4*4*18;
+
+reg [TILE_WIDTH-1:0] single_tile_slot [0:31];
 
 localparam SLOT_SINGLE_TILE = 2'd2;
 
@@ -29,6 +31,7 @@ always_ff @(posedge clk) begin
     if (cisa_load_instr_stage_1.valid && cisa_load_instr_stage_1.is_load) begin
       case (cisa_load_instr_stage_1.cache_slot)
         SLOT_SINGLE_TILE : begin
+          
           cisa_load_dat_stage_2 <= single_tile_slot[cisa_load_instr_stage_1.cache_addr];
         end
         default: cisa_load_dat_stage_2 <= single_tile_slot[cisa_load_instr_stage_1.cache_addr];
@@ -55,9 +58,9 @@ always_ff @(posedge clk) begin
     if (dma_read_port_in.raw_instr_data.valid && dma_read_port_in.raw_instr_data.mem_we) begin // some reason a single ampersand doesn't work here
       case (dma_read_port_in.raw_instr_data.cache_slot)
         SLOT_SINGLE_TILE : begin
-          dma_read_port_out[39:22] <= single_tile_slot[dma_read_port_in.raw_instr_data.cache_addr]; // ditto
+          dma_read_port_out.dat <= single_tile_slot[dma_read_port_in.raw_instr_data.cache_addr]; // ditto
         end
-        default: dma_read_port_out[39:22] <= single_tile_slot[dma_read_port_in.raw_instr_data.cache_addr]; // ditto
+        default: dma_read_port_out.dat <= single_tile_slot[dma_read_port_in.raw_instr_data.cache_addr]; // ditto
       endcase
     end
     // Stage 3

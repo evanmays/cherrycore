@@ -1,21 +1,6 @@
 // when in doubt, play with this toy https://evanw.github.io/float-toy/
-function [15:0] fp16;
-	input [17:0] cherry_float;
-	begin
-		fp16 = cherry_float[17:2]; // chop off least signifcant 2 mantissa bits
-	end
-endfunction
-
-// lol this conversion and fp16 conversion are wrong. TODO: Lets do fp32 dma so conversions can be easier
-function [17:0] cherry_float;
-	input [15:0] fp16;
-	begin
-		cherry_float = {fp16, 2'd0}; // add 2 least signifcant 2
-	end
-endfunction
-
 // Low performance DMA engine
-// Only supports one direction at a time and casts your cherry float to fp16
+// Only supports one direction at a time
 // Only supports 7 bit host address.
 module dma_uart #(parameter CLK_HZ=50000000) (
 input                       clk,
@@ -68,22 +53,16 @@ enum {  // start
         IDLE,
 
         // write_cherry_float()
-        SEND_WRITE_COMMAND_0,
-        SEND_WRITE_COMMAND_1,
-        SEND_WRITE_COMMAND_2,
-        SEND_MSB_0,
-        SEND_MSB_1,
-        SEND_MSB_2,
-        SEND_LSB_0,
-        SEND_LSB_1,
-        SEND_LSB_2,
+        SEND_WRITE_COMMAND,
+        SEND_WRITE_ADDR,
+        SEND_BYTES,
+        SEND_FINISH,
 
         // read_cherry_float()
-        SEND_READ_COMMAND_0,
-        SEND_READ_COMMAND_1,
-        SEND_READ_COMMAND_2,
-        RECV_MSB_0,
-        RECV_LSB_0,
+        SEND_READ_COMMAND,
+        SEND_READ_ADDR,
+        RECV_BYTES,
+        RECV_FINISH,
 
         // end
         FINISH
@@ -93,17 +72,25 @@ enum {  // start
 reg [7:0]   uart_tx_data;
 reg         uart_tx_en;
 wire        uart_tx_busy;
-reg [15:0]  float;
+reg [4*4*18-1:0] send_buffer;
 
 // cisa_mem_read
-reg [7:0]           recv_msb;
+reg [4*4*18-1:0]    recv_buffer;
 dma_stage_2_instr   temp_instr;
 wire                uart_rx_valid;
 wire [7:0]          uart_rx_data;
 
 // cisa_mem_*
-reg [6:0]  addr;
+reg [15:0]  addr;
+reg [5:0] bytes_counter; // used for send and receive bytes. should max out at 36 bytes
+logic uart_tx_busy_truth;
+// I'm not sure why i need this uart_tx_busy_truth but either one of two reasons
+// 1) my uart module won't let me send out a uart the cycle after uart_tx_busy true even though the spec allows this with the 1 stop bit
+// 2) the busy is registering at the wrong time
+assign uart_tx_busy_truth = uart_tx_en | uart_tx_busy;
+
 always_ff @(posedge clk) begin
+    uart_tx_en      <= 0;
     case (S)
         IDLE: begin
             cache_write_port <= 0; // for mem_read // just override write enable to save power // reset here instead of finish state because when dma in finish state dcache still frozen. if you reset in finish state, dcache never knew the instruction existed.
@@ -111,90 +98,71 @@ always_ff @(posedge clk) begin
                 busy    <= 1;
                 addr    <= instr.raw_instr_data.main_mem_addr;
                 if (instr.raw_instr_data.mem_we) begin
-                    S       <= SEND_WRITE_COMMAND_0;
-                    float   <= fp16(instr.dat);
+                    S           <= SEND_WRITE_COMMAND;
+                    send_buffer <= instr.dat;
                 end else begin
-                    // 16'h5248 for 50.25
-                    // 16'hD248 for -50.25
-                    S       <= SEND_READ_COMMAND_0;
-                    temp_instr <= instr;
+                    S           <= SEND_READ_COMMAND;
+                    temp_instr  <= instr;
                 end
             end         
         end
         //
         // def read_cherry_float(f, addr):
         //
-        SEND_READ_COMMAND_0:  begin
+        SEND_READ_COMMAND: if (!uart_tx_busy_truth) begin
             uart_tx_en      <= 1;
-            uart_tx_data    <= {1'b0, addr};
-            S               <= SEND_READ_COMMAND_1;
+            uart_tx_data    <= 8'd2;
+            S <= SEND_READ_ADDR;
+            bytes_counter <= 0;
         end
-        SEND_READ_COMMAND_1: begin
-            uart_tx_en <= 0;
-            S <= SEND_READ_COMMAND_2;
-        end
-        SEND_READ_COMMAND_2: begin
-            if (!uart_tx_busy) begin
-                S <= RECV_MSB_0;
+        SEND_READ_ADDR: if (!uart_tx_busy_truth) begin
+            bytes_counter <= bytes_counter + 1;
+            uart_tx_en      <= 1;
+            uart_tx_data    <= (bytes_counter == 0) ? addr[15:8] : addr[7:0];
+            if (bytes_counter == 1) begin
+                S <= RECV_BYTES;
+                bytes_counter <= 0;
             end
         end
-        RECV_MSB_0: begin
-            if (uart_rx_valid) begin
-                recv_msb <= uart_rx_data;
-                S <= RECV_LSB_0;
-            end
+        RECV_BYTES: if (uart_rx_valid) begin
+            bytes_counter <= bytes_counter + 1;
+            recv_buffer <= {recv_buffer[4*4*18-1-8:0], uart_rx_data};
+            if (bytes_counter == 35) // read 36 bytes
+                S <= RECV_FINISH;
         end
-        RECV_LSB_0: begin
-            if (uart_rx_valid) begin
-                cache_write_port            <= temp_instr; //TODO: since yosys language built in wont let me cache_write_port.raw_instr_data im just overrwriting the entire thing. figure out how to fix
-                cache_write_port[39:22]     <= cherry_float({recv_msb, uart_rx_data});// 16'hD248
-                S <= FINISH;
-           end
+        RECV_FINISH: begin
+            cache_write_port.raw_instr_data <= temp_instr.raw_instr_data;
+            cache_write_port.dat            <= recv_buffer;
+            S <= FINISH;
         end
         //
         // def write_cherry_float(f, addr):
         //
-        SEND_WRITE_COMMAND_0:  begin
+        SEND_WRITE_COMMAND: if (!uart_tx_busy_truth) begin
             uart_tx_en      <= 1;
-            uart_tx_data    <= {1'b1, addr};
-            S               <= SEND_WRITE_COMMAND_1;
+            uart_tx_data    <= 8'd3;
+            S               <= SEND_WRITE_ADDR;
+            bytes_counter <= 0;
         end
-        SEND_WRITE_COMMAND_1: begin
-            uart_tx_en <= 0;
-            S <= SEND_WRITE_COMMAND_2;
-        end
-        SEND_WRITE_COMMAND_2: begin
-            if (!uart_tx_busy) begin
-                S <= SEND_MSB_0;
+        SEND_WRITE_ADDR: if(!uart_tx_busy_truth) begin
+            bytes_counter <= bytes_counter + 1;
+            uart_tx_en      <= 1;
+            uart_tx_data    <= (bytes_counter == 0) ? addr[15:8] : addr[7:0];
+            if (bytes_counter == 1) begin
+                S <= SEND_BYTES;
+                bytes_counter <= 0;
             end
         end
-        SEND_MSB_0: begin
+        SEND_BYTES: if (!uart_tx_busy_truth) begin
+            bytes_counter   <= bytes_counter + 1;
             uart_tx_en      <= 1;
-            uart_tx_data    <= float[15:8];
-            S               <= SEND_MSB_1;
+            uart_tx_data    <= send_buffer[4*4*18-1 -: 8];
+            send_buffer     <= send_buffer << 8;
+            if (bytes_counter == 35) // send 36 bytes
+                S <= SEND_FINISH;
         end
-        SEND_MSB_1: begin
-            uart_tx_en <= 0;
-            S <= SEND_MSB_2;
-        end
-        SEND_MSB_2: begin
-            if (!uart_tx_busy) begin
-                S <= SEND_LSB_0;
-            end
-        end
-        SEND_LSB_0: begin
-            uart_tx_en      <= 1;
-            uart_tx_data    <= float[7:0];
-            S               <= SEND_LSB_1;
-        end
-        SEND_LSB_1: begin
-            uart_tx_en <= 0;
-            S <= SEND_LSB_2;
-        end
-        SEND_LSB_2: begin
-            if (!uart_tx_busy) begin
-                S <= FINISH;
-            end
+        SEND_FINISH: if (!uart_tx_busy_truth) begin
+            S <= FINISH;
         end
 
         // end
@@ -209,7 +177,6 @@ always_ff @(posedge clk) begin
         uart_tx_en      <= 0;
         uart_tx_data    <= 0;
         cache_write_port  <= 0;
-        recv_msb        <= 0;
         temp_instr      <= 0;
     end
 end

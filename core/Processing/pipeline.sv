@@ -5,19 +5,19 @@ module math_pipeline(
   input   math_instr              instr,
 
   // Stage 1
-  output  reg [0:5]             regfile_read_addr,
+  output  reg [5:0]             regfile_read_addr,
 
   // Result of stage 1
-  input       [17:0]            stage_2_dat,
+  input       [SZ*SZ*18-1:0]    stage_2_dat,
 
   // Stage 3
-  output  reg [0:5]             regfile_write_addr,
-  output  reg [17:0]            regfile_dat_w,
+  output  reg [5:0]             regfile_write_addr,
+  output  reg [SZ*SZ*18-1:0]    regfile_dat_w,
   output  reg                   regfile_we
 );
-
+parameter SZ=4;
 math_instr instr_1, instr_2, instr_3;
-reg [17:0] stage_3_dat;
+logic [SZ*SZ*18-1:0] stage_3_dat_reg, stage_3_dat_wire;
 
 always @(posedge clk) begin
   if (!freeze) begin
@@ -39,14 +39,14 @@ always @(posedge clk) begin
     //
     instr_3 <= instr_2;
     if (instr_2.valid) begin
-      stage_3_dat <= relu(stage_2_dat); // 18'd1500;//
+      stage_3_dat_reg <= stage_3_dat_wire;
     end
 
     //
     // Stage 4: Writeback
     //
     regfile_we <= instr_3.valid;
-    regfile_dat_w <= stage_3_dat;
+    regfile_dat_w <= stage_3_dat_reg;
     regfile_write_addr <= {instr_3.superscalar_thread, REG_MATMUL_OUTPUT};
   end
   if (reset) begin
@@ -58,14 +58,12 @@ always @(posedge clk) begin
     instr_1 <= 0;
     instr_2 <= 0;
     instr_3 <= 0;
-    stage_3_dat <= 18'd0;
+    stage_3_dat_reg <= 0;
   end
 end
 
-function [17:0] relu;
-	input [17:0] a;
-	begin
-		relu = a[17] ? 18'd0 : a;
-	end
-endfunction
+UnopALU #(.LEN(SZ*SZ)) UnopALU(
+  .vector_in(stage_2_dat),
+  .vector_out(stage_3_dat_wire)
+);
 endmodule

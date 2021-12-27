@@ -34,7 +34,6 @@ always @(posedge clk) begin
     is_new_superscalar_group <= 1;
   end else begin
     if (we) begin
-      if (VIRTUAL_ELEMENT_WIDTH==40) $display("Writing to varray at head %d with virtual pos %d and dat %b", head, write_addr, dat_w);
       mem_varr_pos_start[head]      <= write_addr;
       mem_varr_pos_end_offset[head] <= write_addr_len;
       mem_varr_dat[head]            <= dat_w;
@@ -46,11 +45,9 @@ always @(posedge clk) begin
     end
     if (re) begin
       // assert (read_addr < varray_len);
-      // if (VIRTUAL_ELEMENT_WIDTH==40 && re && read_addr >= mem_varr_pos_start[tail] && read_addr < mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]) $display("deep %x %x %x %b %b", $past(re), $past(read_addr >= mem_varr_pos_start[tail]), $past(read_addr < mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]), dat_r, $past(dat_r));
       if (queue_size != 0 && read_addr + 1 == /*verilator lint_off WIDTH */ mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail] /*verilator lint_on WIDTH */) begin // how does this behave when value at memory location tail is X
         tail <= tail + 1;
       end
-      // if (VIRTUAL_ELEMENT_WIDTH==40) $display("read addr %d pos start tail %d", read_addr,  mem_varr_pos_start[tail]);
       // verilator lint_off WIDTH
       is_new_superscalar_group <= (read_addr < mem_varr_pos_start[tail] || read_addr + 1 == mem_varr_pos_start[tail] + mem_varr_pos_end_offset[tail]);
       // verilator lint_on WIDTH
