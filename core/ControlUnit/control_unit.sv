@@ -46,7 +46,7 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
 
   output logic program_error
 );
-enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INIT_PREFETCH, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM_1, FINISH_PROGRAM_2} S;
+enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM_1, FINISH_PROGRAM_2} S;
 
 // Info about current program
 reg [15:0]  program_end_pc;
@@ -106,7 +106,7 @@ always @(posedge clk) begin
     DECODE: begin
       case (instruction_type)
         INSTR_TYPE_LOOP: S <= loop_instr.is_new_loop ? START_NEW_LOOP : INCREMENT_LOOP;
-        INSTR_TYPE_RAM: S <= INSERT_TO_QUEUE;// INIT_PREFETCH;
+        INSTR_TYPE_RAM: S <= INSERT_TO_QUEUE;
         default: S <= INSERT_TO_QUEUE;
       endcase
     end
@@ -147,12 +147,8 @@ always @(posedge clk) begin
       end
       S <= UPDATE_PC;
     end
-    INIT_PREFETCH: begin
-      // currently unsupported
-      S <= INSERT_TO_QUEUE;
-    end
     INSERT_TO_QUEUE: if (!instr_queue_stall_push) begin
-      assert(loop_cur_depth >= 0)
+      assert(loop_cur_depth >= 0);
       if (instruction_type == INSTR_TYPE_LOAD_STORE) begin
         cache_addr     <= apu_address_registers[ld_st_instr[1:3]];
         d_cache_addr    <= daddr_di(apu_linear_formulas[ld_st_instr[1:3]], `LOOP_CUR_DEPTH);
