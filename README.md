@@ -22,12 +22,19 @@ There's also a program cache that can hold all the programs a forward and back p
 
 ### Cache Hierachy
 **L3**
+
 Our L3 cache stores data that was prefetched. Once you read from the L3 the data gets destroyed. This is because our L3 is a simple queue. It's smaller than L1 cache also.
+
 **L2**
+
 There is no L2 cache
+
 **L1**
+
 4 slots of memory, each one has different access pattern support. Need to find a balance of slots that do 0D, 1D, 3D and ND striding. The trick with ND striding will be to signifantly reduce cache bandwidth. So, maybe a programer can load a 32x32 tile (1024 elements) with 1D striding. But, if they want 3D striding then they can only load a 3x3x3 cube (27 elements). Notice we went from 1024 elements to 27. But if you had kept 1D striding you probably woudn't be able to get max utilization on the 1024 elements anyway. Supporting arithmetic on cubes instead of tiles should be cheap although we can probably only afford 1 or 2 cube sizes options. Need more example conv2d programs to pick exactly what we want to support here. Perhaps on cherry 3 one slot should be shared across cores and broadcast its reads to all cores.
+
 **Regfile**
+
 Can store 16 threads worth of data. Each thread gets 4 registers. We name these: INPUT, WEIGHTS, OUTPUT, ACCUMULATOR. Each register holds a single SZxSZ tile. On a7100t SZ=4. So the entire regfile is 4x4x4x16x18/8 = 2304 bytes. On the asic, sz=32 so this is 32x32x4x16x18/8 = 147,456 bytes.
 
 
