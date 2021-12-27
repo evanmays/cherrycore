@@ -13,7 +13,7 @@ output  wire [7:0]  led
 
 // Clock frequency in hertz.
 parameter CLK_HZ = 50000000;
-parameter BIT_RATE =   4800;
+parameter BIT_RATE =   115200;
 parameter PAYLOAD_BITS = 8;
 
 wire [PAYLOAD_BITS-1:0]  uart_rx_data;
@@ -31,11 +31,19 @@ assign      led = led_reg;
 
 // ------------------------------------------------------------------------- 
 
+reg need_to_tx_en;
 always @(posedge clk) begin
-    uart_tx_en  <=  uart_rx_valid;
+    if (need_to_tx_en & !uart_tx_busy) begin
+        uart_tx_en  <=  1;
+        need_to_tx_en <= 0;
+    end else
+        uart_tx_en <= 0;
+    if (uart_rx_valid)
+        need_to_tx_en <= 1;
     if(!sw_0) begin
         led_reg <= 8'hF0;
         reading_msw <= 1;
+        need_to_tx_en <= 0;
     end else if(uart_rx_valid) begin
         led_reg <= uart_rx_data[7:0];
         reading_msw <= ~reading_msw;
