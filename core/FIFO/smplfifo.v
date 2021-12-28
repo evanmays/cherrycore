@@ -38,7 +38,7 @@
 `default_nettype	none
 //
 module smplfifo(i_clk, i_reset, i_wr, i_data,
-		o_empty_n, i_rd, o_data, o_status, o_err);
+		o_empty_n, i_rd, o_data, o_status, o_err, will_overflow);
 	parameter	BW=12;	// Byte/data width
 	parameter [4:0]	LGFLEN=9;	// 512 samples
 	input	wire		i_clk, i_reset;
@@ -61,7 +61,7 @@ module smplfifo(i_clk, i_reset, i_wr, i_data,
 	assign	w_first_plus_one = r_first + {{(LGFLEN-1){1'b0}},1'b1};
 	assign	w_last_plus_one  = r_next; // r_last  + 1'b1;
 
-	reg	will_overflow;
+	output reg	will_overflow;
 	initial	will_overflow = 1'b0;
 	always @(posedge i_clk)
 		if (i_reset)

@@ -1,9 +1,11 @@
+`default_nettype	none
 module top #(parameter CLK_HZ=50000000) (
 input               clk     , // Top level system clock input.
 input               sw_0 , // reset switch
 input   wire        uart_rxd, // UART Recieve pin.
 output  wire        uart_txd,  // UART transmit pin.
 output  wire [7:0]  led,
+output wire error,
 output  wire        program_complete
 );
 parameter SZ = 4;
@@ -12,14 +14,16 @@ assign freeze = dma_busy;
 assign led[1] = freeze;
 //assign led[5] = queue_empty;
 assign program_complete = prog_end_instr_valid & !freeze;
-assign led[2] = dma_stage_3_dcache_write.raw_instr_data.valid;
+assign led[2] = dma_stage_3_main_mem_write.raw_instr_data.valid;
+assign led[4] = mem_read_completion_fifo_err | packet_send_mem_write_err;
+assign error = mem_read_completion_fifo_err | packet_send_mem_write_err;
 wire                  queue_empty;
 
-dma_stage_1_instr   dma_stage_1_dcache_read;
-dma_stage_2_instr   dma_stage_2_execute;
-dma_stage_3_instr   dma_stage_3_dcache_write;
+dma_stage_1_instr   dma_stage_1_L3_read;
+dma_stage_2_instr   dma_stage_2_L1_read_or_write;
+dma_stage_3_instr   dma_stage_3_main_mem_write;
 
-wire          dma_busy;
+logic          dma_busy;
 regfile_instruction cache_instr_stage_1, cache_load_instr_stage_2, cache_store_instr_stage_2;
 math_instr          m_instr;
 wire prog_end_instr_valid;
@@ -47,7 +51,7 @@ instruction_queue instruction_queue (
 
   // Pop
   .re(q_re),
-  .out_dma_instr(dma_stage_1_dcache_read),
+  .out_dma_instr(dma_stage_1_L3_read),
   .out_math_instr(m_instr),
   .out_cache_instr(cache_instr_stage_1),
   .out_prog_end_valid(prog_end_instr_valid),
@@ -83,7 +87,7 @@ control_unit #(4) control (
   .prog_loop_ro_data(prog_loop_ro_data),
   .ro_data_addr(ro_data_addr),
 
-  .instr_queue_stall_push(instr_queue_stall_push),
+  .instr_queue_stall_push(instr_queue_stall_push | prefetch_initiate_queue_full),
   .cache_addr(cache_addr),
   .main_mem_addr(main_mem_addr),
   .d_cache_addr(d_cache_addr),
@@ -95,7 +99,31 @@ control_unit #(4) control (
   .queue_ram_instr(queue_ram_instr),
   .queue_ld_st_instr(queue_ld_st_instr)
 );
-
+logic prefetch_command_we;
+initiate_prefetch_command prefetch_command_dat_w;
+always @(posedge clk)
+  // if control unit outputs cisa_mem_read, then prefetch
+  if (  queue_we &&
+        queue_instr_type == INSTR_TYPE_RAM &&
+        !queue_ram_instr[2] // not a mem_write. it's a mem_read
+      ) begin
+    prefetch_command_dat_w <= {queue_copy_count, main_mem_addr, d_main_mem_addr};
+    prefetch_command_we <= 1;
+    $display("prefetch vram addr %d", main_mem_addr);
+  end else begin
+    prefetch_command_we <= 0;
+  end
+wire prefetch_initiate_queue_full;
+prefetch_initiate_superscalar_fifo packet_send_fifo_mem_read_request(
+.clk(clk),
+.reset(sw_0),
+.re(dma_send_read_queue_re),
+.we(prefetch_command_we),
+.dat_w(prefetch_command_dat_w),
+.dat_r(dma_send_read_queue_data),
+.full(prefetch_initiate_queue_full),
+.emptyn(dma_send_read_queue_available)
+);
 fake_icache icache (
   .raw_instruction(raw_instruction),
   .pc(pc)
@@ -107,21 +135,124 @@ fake_ro_data ro_data (
   .prog_loop_ro_data(prog_loop_ro_data)
 );
 
-dma_uart dma (
+//
+// IO
+//
+wire uart_rx_valid;
+wire [7:0] uart_rx_data;
+wire L3_cache_we;
+wire [18*16-1:0] L3_cache_dat_w;
+PacketReceiver PacketReceiver (
 .clk(clk),
 .reset(sw_0),
-.instr(dma_stage_2_execute),
-.busy(dma_busy),
-// .freeze(freeze), jk, no one can freeze the DMA
+.rx_interrupt(uart_rx_valid),
+.rx_data(uart_rx_data),
 
-// command cache signals
-.cache_write_port(dma_stage_3_dcache_write),
-
-// board pins
-.uart_rxd(uart_rxd), // UART Recieve pin.
-.uart_txd(uart_txd)  // UART transmit pin.
-
+.mem_read_result_stb(L3_cache_we),
+.mem_read_result_matrix_tile(L3_cache_dat_w)
 );
+uart_rx #(
+.BIT_RATE(19200),
+.PAYLOAD_BITS(8),
+.CLK_HZ  (CLK_HZ  )
+) i_uart_rx(
+.clk          (clk          ),
+.resetn       (!sw_0       ),
+.uart_rxd     (uart_rxd     ),
+.uart_rx_en   (1'b1         ),
+.uart_rx_valid(uart_rx_valid ),
+.uart_rx_data (uart_rx_data)
+);
+
+wire L3_not_empty;
+wire L3_cache_read_enable = dma_stage_1_L3_read.raw_instr_data.valid && !dma_stage_1_L3_read.raw_instr_data.mem_we;
+wire packet_send_fifo_mem_write_command_we = dma_stage_3_main_mem_write.raw_instr_data.valid && dma_stage_3_main_mem_write.raw_instr_data.mem_we;
+always @(*) begin
+  dma_busy =    (!L3_not_empty && L3_cache_read_enable)
+              || (send_write_packet_queue_full && packet_send_fifo_mem_write_command_we);
+end
+wire mem_read_completion_fifo_err;
+
+// After a prefetch is complete, it stores the data in this L3 cache. The Dma execution pipeline will read from this L3 cache for cisa_mem_read instructions
+reg [18*16-1:0] k;
+smplfifo #(.BW(18*16)) L3Cache(
+.i_clk(clk),
+.i_reset(sw_0),
+.i_wr(L3_cache_we),
+.i_data(L3_cache_dat_w),
+.o_empty_n(L3_not_empty),
+.i_rd(!freeze && L3_not_empty && L3_cache_read_enable), // read from L3 cache for cisa_mem_read
+.o_data(k),
+.o_err(mem_read_completion_fifo_err)
+);
+dma_instruction raw_data_wire_reg;
+always @(posedge clk) begin
+  if (sw_0) begin
+    dma_stage_2_L1_read_or_write <= 0;
+  end else if (!freeze) begin
+    // we are adding a cycle delay here. can we remove it?
+    dma_stage_2_L1_read_or_write.raw_instr_data  <= dma_stage_1_L3_read.raw_instr_data;
+    dma_stage_2_L1_read_or_write.dat <= k;
+  end
+  
+end
+wire uart_tx_busy, uart_tx_en;
+wire [7:0] uart_tx_data;
+wire dma_send_read_queue_re;
+wire [15:0] dma_send_read_queue_data;
+wire dma_send_read_queue_available;
+
+wire dma_send_write_queue_re;
+wire [15:0]    dma_send_write_queue_data;
+wire [18*16-1:0] dma_send_write_queue_data2;
+wire dma_send_write_queue_available;
+PacketSender PacketSender(
+.clk(clk),
+.reset(sw_0),
+.tx_busy(uart_tx_busy),
+.tx_data(uart_tx_data),
+.tx_en(uart_tx_en),
+
+.dma_send_read_queue_data(dma_send_read_queue_data),
+.dma_send_read_queue_available(dma_send_read_queue_available),
+.dma_send_read_queue_re(dma_send_read_queue_re),
+
+.dma_send_write_queue_data(dma_send_write_queue_data),
+.dma_send_write_queue_data2(dma_send_write_queue_data2),
+.dma_send_write_queue_available(dma_send_write_queue_available),
+.dma_send_write_queue_re(dma_send_write_queue_re)
+);
+
+uart_tx #(
+.BIT_RATE(19200),
+.PAYLOAD_BITS(8),
+.CLK_HZ  (CLK_HZ  )
+) i_uart_tx(
+.clk          (clk          ),
+.resetn       (!sw_0       ),
+.uart_txd     (uart_txd     ),
+.uart_tx_en   (uart_tx_en   ),
+.uart_tx_busy (uart_tx_busy ),
+.uart_tx_data (uart_tx_data ) 
+);
+
+wire packet_send_mem_write_err;
+wire send_write_packet_queue_full;
+smplfifo #(.BW(304)) packet_send_fifo_mem_write_command(
+.i_clk(clk),
+.i_reset(sw_0),
+.i_wr(!freeze && !send_write_packet_queue_full && packet_send_fifo_mem_write_command_we),
+.i_data({9'd0, dma_stage_3_main_mem_write.raw_instr_data.main_mem_addr, dma_stage_3_main_mem_write.dat}),
+.o_empty_n(dma_send_write_queue_available),
+.i_rd(dma_send_write_queue_re),
+.o_data({dma_send_write_queue_data, dma_send_write_queue_data2}),
+.o_err(packet_send_mem_write_err),
+.will_overflow(send_write_packet_queue_full)
+);
+
+//
+// Memory (cache and regfile)
+//
 
 wire [SZ*SZ*18-1:0] cache_load_dat_stage_2, cache_store_dat_stage_2;
 dcache #(.TILE_WIDTH(SZ*SZ*18)) dcache (
@@ -132,13 +263,12 @@ dcache #(.TILE_WIDTH(SZ*SZ*18)) dcache (
 .cisa_load_dat_stage_2    (cache_load_dat_stage_2),
 .cisa_store_instr_stage_2 (cache_store_instr_stage_2),
 .cisa_store_dat_stage_2   (cache_store_dat_stage_2),
-.dma_read_port_in         (dma_stage_1_dcache_read),
-.dma_read_port_out        (dma_stage_2_execute),
-.dma_write_port           (dma_stage_3_dcache_write),
+.dma_port_in              (dma_stage_2_L1_read_or_write),
+.dma_write_port           (dma_stage_3_main_mem_write),
 .reset(sw_0)
 );
 
-wire [0:5] processing_read_addr_regfile, processing_write_addr_regfile;
+wire [5:0] processing_read_addr_regfile, processing_write_addr_regfile;
 wire [SZ*SZ*18-1:0] processing_regfile_dat_r, processing_regfile_dat_w;
 wire processing_regfile_we;
 regfile #(.LOG_SUPERSCALAR_WIDTH(4), .REG_WIDTH(SZ*SZ*18)) regfile(
@@ -156,6 +286,10 @@ regfile #(.LOG_SUPERSCALAR_WIDTH(4), .REG_WIDTH(SZ*SZ*18)) regfile(
 .port_d_write_addr({cache_load_instr_stage_2.superscalar_thread, cache_load_instr_stage_2.regfile_reg}),
 .port_d_in(cache_load_dat_stage_2)
 );
+
+//
+// Math Processor
+//
 
 math_pipeline #(.SZ(SZ)) processing_pipeline(
 .clk(clk),

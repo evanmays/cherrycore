@@ -10,19 +10,20 @@ typedef struct packed {
   logic   [10:0]  cache_addr;
 } dma_instruction; // Ouput of stage 0: Pulled from queue. Edit valid to be if queue missingg instruction OR pipeline frozen
 
+// todo, should isntead do stage 1 read dma, stage 2 write/read cache, stage 3 write dma
 typedef struct packed {
   dma_instruction raw_instr_data;
-} dma_stage_1_instr; // Used in stage 1: Read cache
+} dma_stage_1_instr; // Used in stage 1: Read from L3 if needed
 
 typedef struct packed {
   logic       [287:0]  dat;
   dma_instruction     raw_instr_data;
-} dma_stage_2_instr; // Used in stage 2: Execute DMA
+} dma_stage_2_instr; // Used in stage 2: Read or write cache
 
 typedef struct packed {
   logic       [287:0]  dat;
   dma_instruction     raw_instr_data;
-} dma_stage_3_instr; // Used in stage 3: Write cache
+} dma_stage_3_instr; // Used in stage 3: Write to vram
 
 //
 // Regfile Pipeline Data
@@ -72,3 +73,9 @@ typedef struct packed {
   reg is_independent;
   reg [2:0] name; // ascii_cast('i'+name) to get the character
 } decoded_loop_instruction;
+
+typedef struct packed {
+  logic [4:0] copy_count;
+  logic [17:0]             addr;
+  logic [17:0]             d_addr;
+} initiate_prefetch_command;

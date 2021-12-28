@@ -45,7 +45,7 @@ class PinnedDeviceMemorySpace():
             self.pinned_mem[i] = [a if not i % 16 == 0 else -a] * 4 * 4
         print(numpy_to_cherry_float_tile(self.pinned_mem[20]).hex())
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_address = ('localhost', 1337)
+        server_address = ('localhost', 1338)
         self.sock.connect(server_address)
         global shouldbe, original
         shouldbe = torch.tensor(self.pinned_mem).relu().numpy()
@@ -90,7 +90,8 @@ class PinnedDeviceMemorySpace():
                 np_dat = self.pinned_mem[host_addr]
                 bytes_dat = numpy_to_cherry_float_tile(np_dat)
                 print("Read request data:", bytes_dat)
-                self.sock.sendall(bytes_dat)
+                read_request_response_type = 3
+                self.sock.sendall(read_request_response_type.to_bytes(1,'big') + bytes_dat)
     # TODO: support tinygrad creating a new device buffer and moving data to pinned_mem (t.to_gpu()). need to lock memory locations to prevent tinygrad and cherry device from reading while someone else is writing?
     # TODO: support tiny grad moving data from pinned_mem to "cpu" land (t.to_cpu())
 

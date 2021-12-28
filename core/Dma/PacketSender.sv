@@ -7,7 +7,7 @@ module PacketSender(
     input reset,
 
     // UART connection (no real reason this couldn't be replaced with a high bandwidth link layer like ethernet or pcie. Just feed this module 1 byte at a time)
-    input              tx_busyn,
+    input              tx_busy,
     output logic       tx_en,
     output logic [7:0] tx_data,
 
@@ -29,6 +29,8 @@ enum {IDLE, SENDING_READ_REQUEST, SENDING_WRITE, SENDING_END_PROG_NOTIF} S;
 
 reg [15:0] counter;
 reg [18*16-1:0] matrix_send_tile;
+wire tx_busyn = !(tx_en | tx_busy);
+reg [15:0] write_addr;
 always @(posedge clk) begin
     tx_en <= 0;
     dma_send_read_queue_re <= 0;
@@ -52,7 +54,7 @@ always @(posedge clk) begin
         end
 
         // MAKE&SEND PROG END NOTIFICATION PACKET
-        SENDING_READ_REQUEST: if (tx_busyn) begin
+        SENDING_END_PROG_NOTIF: if (tx_busyn) begin
             counter <= counter + 1;
             if (counter == 1) // Read request packet is 1 header byte, 2 payload bytes. 3 bytes total.
                 S <= IDLE;
@@ -75,7 +77,7 @@ always @(posedge clk) begin
                 S <= IDLE;
             case (counter)
                 0: begin
-                    tx_data <= {2'd0, 6'd0}; // packet type bits kinds are different depeending on direction of packet
+                    tx_data <= 8'd2; // packet type bits kinds are different depeending on direction of packet
                     tx_en <= 1;
                 end
                 1: begin
@@ -92,22 +94,24 @@ always @(posedge clk) begin
         // MAKE&SEND SEND WRITE COMMAND PACKET
         SENDING_WRITE: if (tx_busyn) begin
             counter <= counter + 1;
-            if (counter == 38) // 1 byte for header, Then payload has two parts. 2 bytes for host address and 36 bytes for data
+            if (counter == 38) // 1 byte for packet type, 2 bytes for host address, 36 bytes for data
                 S <= IDLE;
             case (counter)
                 0: begin
                     // eventually send packet length when we support burst write and dma write reordering
-                    tx_data <= {2'd1, 6'd0}; // packet type bits kinds are different depeending on direction of packet
+                    tx_data <= 8'd3; // packet type bits kinds are different depeending on direction of packet
                     tx_en <= 1;
+                    write_addr <= dma_send_write_queue_data;
+                    matrix_send_tile <= dma_send_write_queue_data2;
                 end
                 1: begin
-                    tx_data <= dma_send_read_queue_data[15:8];
+                    tx_data <= write_addr[15:8];
                     tx_en <= 1;
                 end
                 2: begin
-                    tx_data <= dma_send_read_queue_data[7:0];
+                    tx_data <= write_addr[7:0];
                     tx_en <= 1;
-                    matrix_send_tile <= dma_send_write_queue_data2;
+                    
                 end
                 default: begin
                     tx_data <= matrix_send_tile[18*16-1 -: 8];
@@ -117,6 +121,14 @@ always @(posedge clk) begin
             endcase
         end
     endcase
+
+    if (reset) begin
+        S <= IDLE;
+        tx_en <= 0;
+        dma_send_read_queue_re <= 0;
+        dma_send_write_queue_re <= 0;
+        dma_send_end_program_queue_re <= 0;
+    end
 end
 
 

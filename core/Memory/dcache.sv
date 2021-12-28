@@ -11,9 +11,8 @@ module dcache (
   input   wire[TILE_WIDTH-1:0]            cisa_store_dat_stage_2,
 
   // DMA Instructions (cisa_mem_read, cisa_mem_write)
-  input   dma_stage_1_instr     dma_read_port_in,
-  output  dma_stage_2_instr     dma_read_port_out,
-  input   dma_stage_3_instr     dma_write_port
+  input   dma_stage_2_instr     dma_port_in,
+  output   dma_stage_3_instr     dma_write_port
 );
 
 parameter TILE_WIDTH = 4*4*18;
@@ -53,31 +52,35 @@ always_ff @(posedge clk) begin
     //
     // DMA Accessing its ports
     //
-    // Stage 1
-    dma_read_port_out[21:0]  <= dma_read_port_in; //dma_read_port_out.dat = will synthesize in iverilog but not yosys. Yosys loves to fail silently and claim it's an implicit port declaration
-    if (dma_read_port_in.raw_instr_data.valid && dma_read_port_in.raw_instr_data.mem_we) begin // some reason a single ampersand doesn't work here
-      case (dma_read_port_in.raw_instr_data.cache_slot)
-        SLOT_SINGLE_TILE : begin
-          dma_read_port_out.dat <= single_tile_slot[dma_read_port_in.raw_instr_data.cache_addr]; // ditto
-        end
-        default: dma_read_port_out.dat <= single_tile_slot[dma_read_port_in.raw_instr_data.cache_addr]; // ditto
-      endcase
-    end
-    // Stage 3
-    if (dma_write_port.raw_instr_data.valid & !dma_write_port.raw_instr_data.mem_we) begin
-      case (dma_write_port.raw_instr_data.cache_slot)
-        SLOT_SINGLE_TILE : begin
-          single_tile_slot[dma_write_port.raw_instr_data.cache_addr] <= dma_write_port.dat;
-        end
-        default: single_tile_slot[dma_write_port.raw_instr_data.cache_addr] <= dma_write_port.dat;
-      endcase
+    // Stage 2
+    dma_write_port.raw_instr_data  <= dma_port_in.raw_instr_data;
+    if (dma_port_in.raw_instr_data.valid) begin
+      if (dma_port_in.raw_instr_data.mem_we) begin
+        // cisa_mem_write will read from dcache
+        case (dma_port_in.raw_instr_data.cache_slot)
+          SLOT_SINGLE_TILE : begin
+            dma_write_port.dat <= single_tile_slot[dma_port_in.raw_instr_data.cache_addr]; // ditto
+          end
+          default: dma_write_port.dat <= single_tile_slot[dma_port_in.raw_instr_data.cache_addr]; // ditto
+        endcase
+        // $display("reading from L1 at %d with data %h", dma_port_in.raw_instr_data.cache_addr, single_tile_slot[dma_port_in.raw_instr_data.cache_addr]);
+      end else begin 
+        // cisa_mem_read will write to dcache
+        case (dma_port_in.raw_instr_data.cache_slot)
+          SLOT_SINGLE_TILE : begin
+            single_tile_slot[dma_port_in.raw_instr_data.cache_addr] <= dma_port_in.dat;
+          end
+          default: single_tile_slot[dma_port_in.raw_instr_data.cache_addr] <= dma_port_in.dat;
+        endcase
+        // $display("writing to L1 at %d with dat %h", dma_port_in.raw_instr_data.cache_addr, dma_port_in.dat);
+      end
     end
   end
 
   if (reset) begin
     cisa_load_dat_stage_2   <= 0;
     cisa_load_instr_stage_2 <= 0;
-    dma_read_port_out <= 14'd0;
+    dma_write_port.raw_instr_data <= 0;
   end
 end
 endmodule

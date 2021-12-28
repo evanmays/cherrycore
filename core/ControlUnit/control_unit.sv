@@ -106,7 +106,6 @@ always @(posedge clk) begin
     DECODE: begin
       case (instruction_type)
         INSTR_TYPE_LOOP: S <= loop_instr.is_new_loop ? START_NEW_LOOP : INCREMENT_LOOP;
-        INSTR_TYPE_RAM: S <= INSERT_TO_QUEUE;
         default: S <= INSERT_TO_QUEUE;
       endcase
     end

@@ -34,12 +34,12 @@ always @(posedge clk) begin
     case (S)
         IDLE: if (rx_interrupt) begin
             counter <= 0;
-            packet_length <= rx_data[5:0]; // only used for upload program packets. In future can use for received data to support burst packets
-            case (rx_data[7:6])
-                2'd0: S <= UPLOAD_PROG_PACKET;
-                2'd1: S <= ENQUEUE_PROG_PACKET;
-                2'd2: S <= DATA_READ_RESULT_PACKET;
-                2'd3: begin end
+            packet_length <= rx_data[7:2]; // only used for upload program packets. In future can use for received data to support burst packets
+            case (rx_data[1:0])
+                2'd1: S <= UPLOAD_PROG_PACKET;
+                2'd2: S <= ENQUEUE_PROG_PACKET;
+                2'd3: S <= DATA_READ_RESULT_PACKET;
+                2'd0: begin end
             endcase
         end
 

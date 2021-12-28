@@ -75,13 +75,19 @@ void log_instruction_queue_if_needed(CherrySim *dut, std::ofstream &wf, std::ofs
     prev_re = dut->top__DOT__q_re;
 }
 
+void tick(CherrySim *const dut) {
+    dut->clk = 1;
+    dut->eval();
+    dut->clk = 0;
+    dut->eval();
+}
 int main(int argc, char** argv, char** env) {
     std::ofstream wf("iq_writes.csv", std::ios_base::app);
     std::ofstream rf("iq_reads.csv", std::ios_base::app);
 
     printf("Starting the Cherry Zero Simulator\n");
     CherrySim *dut = new CherrySim;
-    UARTSIM *uart = new UARTSIM(1337);
+    UARTSIM *uart = new UARTSIM(1338);
     const int cyclesPerBit = 2604; // 50e6 hz / 19200 baud
     uart->setup(cyclesPerBit);
     // printf("%d", uart->m_setup);
@@ -105,18 +111,20 @@ int main(int argc, char** argv, char** env) {
         // we can even wrap into a single network endpoint. This wrapper communicates with the sim proces and fowards uart process http
         // then you also have the process running on host computer that manages connection to device. this process is a dma process. it shares memory space with tinygrad. I guess it can be in tinygrad but it needs to be non blocking. so a process fork probably
         // posedge
-        dut->clk = 1;
-        dut->eval();
-        dut->clk = 0;
-        dut->eval();
+        tick(dut);
         cycle_cnt++;
         
-        log_instruction_queue_if_needed(dut, wf, rf);
+        //log_instruction_queue_if_needed(dut, wf, rf);
+        assert(!dut->error);
     }
-    for(int i = 0; i < 100*cyclesPerBit; i++) {
+    for(int i = 0; i < 10000*cyclesPerBit; i++) {
         // need to keep tcp link running so it can finish its job.
         // not actually sure if we need this but easier to be safe than read the uartsim.cpp code
-        (*uart)(1);
+        // and transfer 1000 more bits (100 bytes of data) since those cisa_mem_write keep going even after a program is complete
+        // I guess, program complete doesn't mean we have finished all the asynchronous calls to cisa_mem_write.
+        // I guess, when python "hears" a program is done, it will need to do some kind of cross reference with the prgoram's code and the recent memory writes to know if the data is stored in vram file properly. Likely, les of an issue when VRAM is on GPU? depends on microarch
+        dut->uart_rxd = (*uart)(dut->uart_txd);
+        tick(dut);
     }
 
     auto end = std::chrono::system_clock::now();

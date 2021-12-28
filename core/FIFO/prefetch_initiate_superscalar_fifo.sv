@@ -1,46 +1,46 @@
-// Can save signfiicant LUTs by decreasing LINE
- // Can push up to 4 elements per cycle
- // Can pop up to 1 element per cycle
- module prefetch_initiate_superscalar_fifo #(parameter LINE=18)(
-   input clk,
-   input reset,
-   input re,
-   input we,
-   input [1:0] we_count,
-   input [LINE-1:0] dat_w_1,
-   input [LINE-1:0] dat_w_2,
-   input [LINE-1:0] dat_w_3,
-   input [LINE-1:0] dat_w_4,
-   output reg [LINE-1:0] dat_r,
-   output full_soon, // at most 4 cycles away from being full
-   output empty_soon, // at most 4 cycles away from being empty
- );
-   // mem[tail] is in the list. mem[head] is next position to put something
-   reg [LINE*4-1:0] mem [0:63]; // 6 bit memory addresses should provide some FPGA benefits. We don't need large queue
-   reg [5:0] head, tail;
-   reg [1:0] read_line_position;
-   wire [1:0] read_line_position_next;
-   assign read_line_position_next = read_line_position + 1;
-   assign size = head > tail ? head - tail : 63 - tail + head;
-   // 6 bit size means both flags together just 1 (6 in 2 out) LUT!!!
-   assign full_soon = size == 63 | size == 64;
-   assign empty_soon = size == 1 | size == 0;
-   always @(posedge clk) begin
-     if (reset) begin
-       head <= 0;
-       tail <= 0;
-       read_line_position <= 0;
-     end
-     else begin
-       if (we) begin
-         mem[head] <= {we_count, dat_w_1, dat_w_2, dat_w_3, dat_w_4};
-         head <= head + 1; // % 64
-       end
-       if (re) begin
-         read_line_position <= read_line_position_next > dat_r[1:0] ? 0 : read_line_position_next;
-         tail <= read_line_position_next > dat_r[1:0] ? tail + 1 : tail;
-         dat_r <= mem[tail][2+read_line_position*LINE +: LINE];
-       end
-     end
-   end
+// Can push up to 4 elements per cycle
+// Can pop up to 1 element per cycle
+// We just push the formula out=addr + i * d_addr
+// Then when we pop, we pop an out for i from 0 to 3.
+module prefetch_initiate_superscalar_fifo #(parameter LINE=18)(
+  input clk,
+  input reset,
+  input re,
+  input we,
+  input initiate_prefetch_command dat_w,
+  output logic [LINE-1:0] dat_r,
+  output logic full,
+  output logic emptyn
+);
+  localparam COPY_COUNT_WIDTH = 5;
+  // mem[tail] is in the list. mem[head] is next position to put something
+  initiate_prefetch_command mem [0:63];
+  reg [5:0] head, tail;
+  reg [COPY_COUNT_WIDTH-1:0] read_counter;
+  wire [5:0] size = head >= tail ? head - tail : 63 - tail + head + 1;
+  assign full = size == 60; // makes life easier
+  assign emptyn = size > 0;
+  always @(posedge clk) begin
+    if (we && !full) begin
+      assert(dat_w.copy_count > 0 && dat_w.copy_count <= 16);
+      mem[head] <= dat_w;
+      head <= head + 1; // % 64
+    end
+    if (re && emptyn) begin
+      read_counter <= read_counter + 1;
+      if (read_counter + 1 == mem[tail].copy_count) begin
+        tail <= tail + 1;
+        read_counter <= 0;
+      end
+      dat_r <= read_counter == 0
+                ? mem[tail].addr
+                : dat_r + mem[tail].d_addr;
+    end
+    if (reset) begin
+      head <= 0;
+      tail <= 0;
+      read_counter <= 0;
+      dat_r <= 0;
+    end
+  end
  endmodule
