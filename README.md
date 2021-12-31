@@ -31,14 +31,24 @@ There is no L2 cache
 
 **L1**
 
-4 slots of memory, each one has different access pattern support. Need to find a balance of slots that do 0D, 1D, 3D and ND striding. The trick with ND striding will be to signifantly reduce cache bandwidth. So, maybe a programer can load a 32x32 tile (1024 elements) with 1D striding. But, if they want 3D striding then they can only load a 3x3x3 cube (27 elements). Notice we went from 1024 elements to 27. But if you had kept 1D striding you probably woudn't be able to get max utilization on the 1024 elements anyway. Supporting arithmetic on cubes instead of tiles should be cheap although we can probably only afford 1 or 2 cube sizes options. Need more example conv2d programs to pick exactly what we want to support here. Perhaps on cherry 3 one slot should be shared across cores and broadcast its reads to all cores.
+8 million elements (20MB) = 8000 tiles = 13-bit address path
+
+Each address gives you access to a single (SZxSZ) tile of the tensor. The tile stores data across the final two dimensions. So, if you have an image tensor with shape (batch_size, channel_count, width, height) then a memory access lets you access a 32x32 tile for a specific batch and channel. Perhaps on cherry 3 an address range can be shared across cores and broadcast its reads to all cores. If just reshaping to swap the last two dimensions, no need to rearrange in mememory. If trying to rearrange more than that, we'll probably need some kind of transpose engine with first class reshape support. Maybe that looks like a coprocessor with a small strided memory.
+
+Programmer manually cache. They are aided by our runtime telling them when a tensor is in cache already or not. They write two programs. One for if a tensor is in cache, another for if the tensor is not in cache.
+
+We want to support a load/store instruction into 32x32 matrix register (2432 bytes). The programmer can access 4 of these registers (input, weights, accumulate, output).
+
+Convolution is the only program that really needs strided memory. We can have all of our cache load/store in tensor tiles. Then apply a first class convolution op on the tiles. Since we need to convolve at the edges between tiles, make it so we can load a tile plus padding from neighbooring tiles. We can guarantee no bank conflicts.
 
 **Regfile**
 
-Can store 16 threads worth of data. Each thread gets 4 registers. We name these: INPUT, WEIGHTS, OUTPUT, ACCUMULATOR. Each register holds a single SZxSZ tile. On a7100t SZ=4. So the entire regfile is 4x4x4x16x18/8 = 2304 bytes. On the asic, sz=32 so this is 32x32x4x16x18/8 = 147,456 bytes.
+Can store 16 threads worth of data. Each thread gets 4 registers. We name these: INPUT, WEIGHTS, OUTPUT, ACCUMULATOR. Each register holds a single SZxSZ tile. On a7100t SZ=4. So the entire regfile is 4x4x4x16x18/8 = 2304 bytes. On U250 SZ=16. On the asic, sz=32 so this is 32x32x4x16x18/8 = 147,456 bytes.
 
 ### Native arithmetic
 For now, train a cherry float (18 bit floating point with 8 bit exponent.). Maybe do TF32 (19 bits) in future. Can we train AI in this precision? Everyone else is using mixed precision.
+
+First class support for matrix multiply (tensor core style). Maybe first class support for 3x3 and 5x5 convolutions over a 35x35 tile although 5x5 will have a third of the throughput.
 
 # Cherry 1 Stages
 
@@ -121,13 +131,6 @@ git submodule update --init --recursive
 ~/Desktop/nextpnr-xilinx/nextpnr-xilinx --freq 50 --chipdb ~/Desktop/nextpnr-xilinx/xilinx/xc7a100t.bin --xdc ../arty.xdc --json attosoc.json --write attosoc_routed.json --fasm attosoc.fasm
 ```
 
-# TODO
-
-* Write verilog. Search for the word TODO throughout this README
-* Fix unaligned loads/stores (I think this is good now, at least acceptable)
-* Clean up this repo
-* Improve this readme
-
 
 # Superscalar Notes
 
@@ -157,84 +160,6 @@ This is super cheap to implement in hardware. Hopefully, under 1,500 of our 64,0
 Superscalar implementation in `experiments/superscalar.py`. Can play around with different latencies for matmul or memory accesses. Can also play around with different superscalr widths. In hardware, increasing superscalar with is almost free for us on FPGA.
 
 More info (and example code for `cherry_range()` in the compiler section.
-
-# Tensor Cores
-
-These all should be straightforward but annoying to get to IEEE specification.
-
-They can be pipelined. Ideal latency is 3 or less cycles. Every doubling of latency requires us to double our superscalar width which means double the L0 registers which means double the processing core multiplexer which means we not happy.
-
-* Test floating point multiply
-* Write & test floating point add
-* Write & test floating point fused multiply add (FMA) (http://jctjournals.com/May2016/v5.pdf)
-* Use fused multiply accumulate (FMA) for the matmul and mulacc
-* Write & test Relu (should be an easy intro, save for noobs)
-* Write & test GT0 (should be an easy intro, save for noobs)
-* Write & test the other unops and binops
-
-# Notes on Memory system
-
-Programmer manually cache. They are aided by our runtime telling them when a matrix is in cache already or not. They write two programs. One for if a tensor is in cache, another for if the tensor is not in cache.
-
-Strided Memory
-8 million elements (20MB) = 23-bit address path
-
-We want to support a load/store instruction into 32x32 matrix register (2432 bytes). The programmer can access 4 of these registers.
-
-Use some hash function on the addresses to avoid "bank conflicts", can upper bound to probabilisticly 1.2 cycles per matrix load with stride x as 0 or 1.
-
-Memory ports won't truly support stride x greater than 1 but Conv2d is the only thing using that. And only when H and W are not both 1. We will have the memory accesses get progressively slower as H and W increase, eventually it asymptotes. It will still be higher bandwidth than nvidia even at slowest point. But why waste the transistors supporting a stride x > 1 when the only one who needs it is convolutions.
-
-If user tries stride y as 1 and stride x > 1, then we just transpose the matrix during the load.
-
-On Big Cherry 1
-z=min(stride x, stride y)
-z=0 is max efficiency
-z=1 is max efficiency
-z=4 is 4x slower
-z=9 is 8x slower
-z>=16 is 16x slower
-
-Convolution with H,W=3 is H*W=Z=9 so 8x slower. Convolution with H,W=1 is Z=1 so max bandwidth.
-
-Non Strided Memory
-
-8 million elements (20MB) = 23-bit address path
-
-Processor can only read from here, DMA can only write.
-
-No strides on chip
-
-Support a load (no store) instruction into 32x32 matrix register. The load instruction can specificy strides but they happen over time. The data is loaded from the DMA while the program is executing. If the data isn't loaded yet, program stalls.
-
-Since non strided, bank conflicts don't happen.
-
-Apple has performance cores and efficiency cores. One might call the other memory, strong cache, and this is weak cache.
-
-All cache slots (strong and weak, strided and non strided) Are split into 4 slots. Each slot can hold one tensor.
-
-If user wants their cherry program to output multiple tensors, they can store one tensor in local cache, and queue the rest of the tensors to go to DMA.
-
-# Notes on ALU
-
-matmul/mulacc are the big ones, 65536 FLOPS and 2048 FLOPS respectively
-
-Have to think this through more with the reduce instructions too.
-
-It's okay if the matmul takes multiple cycles I think, but the mulacc would be nice to be one.
-
-TODO
-* add tests for matmul
-* add remaining vector ops
-* add reduce ops
-
-# Notes on mini edition in 100T
-
-16x16 registers (608 bytes), 256 FMACs (does it fit)
-
-* 128k elements = 17-bit address path
-* rs1 = 2x4-bit masks + 17-bit address
-* rs2 = 2x16-bit strides
 
 # Compiler
 
