@@ -26,8 +26,8 @@ void reset(CherrySim *dut) {
         dut->clk = 0;
         dut->eval();
     }
-    sleep(5);
     dut->sw_0 = 0;
+    printf("Cherry Zero Simulator Initialized and Ready\n");
 }
 
 void log_instruction_queue_if_needed(CherrySim *dut, std::ofstream &wf, std::ofstream &rf) {

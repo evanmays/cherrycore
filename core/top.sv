@@ -14,7 +14,7 @@ assign led[1] = freeze;
 //assign led[5] = queue_empty;
 assign led[2] = dma_stage_3_main_mem_write.raw_instr_data.valid;
 assign led[4] = error;
-assign error = mem_read_completion_fifo_err | packet_send_mem_write_err | packet_send_prog_complete_err;
+assign error = mem_read_completion_fifo_err | packet_send_mem_write_err | packet_send_prog_complete_err | execution_queue_err;
 wire                  queue_empty;
 
 dma_stage_1_instr   dma_stage_1_L3_read;
@@ -77,6 +77,11 @@ control_unit #(4) control (
   .clk(clk),
   .reset(sw_0),
 
+  .execution_queue_not_empty(execution_queue_not_empty),
+  .execution_queue_read_enable(execution_queue_read_enable),
+  .execution_queue_start_pc(execution_queue_next_prog_dat[31:16]),
+  .execution_queue_end_pc(execution_queue_next_prog_dat[15:0]),
+  .execution_queue_start_ro_data_addr(execution_queue_next_prog_dat[34:31]),
 
   .raw_instruction(raw_instruction),
   .pc(pc),
@@ -97,6 +102,23 @@ control_unit #(4) control (
   .queue_ram_instr(queue_ram_instr),
   .queue_ld_st_instr(queue_ld_st_instr)
 );
+
+wire execution_queue_not_empty;
+wire execution_queue_read_enable;
+wire [8*5-1:0] execution_queue_next_prog_dat;
+wire execution_queue_err;
+smplfifo #(.BW(8*5)) ProgramExecutionQueue(
+.i_clk(clk),
+.i_reset(sw_0),
+.i_wr(enqueue_program_stb),
+.i_data(enqueue_program_dat),
+.o_empty_n(execution_queue_not_empty),
+.i_rd(execution_queue_read_enable), // control unit will ensure the queue isn't empty before strobing this signal
+.o_data(execution_queue_next_prog_dat),
+.o_err(execution_queue_err)
+);
+
+
 logic prefetch_command_we;
 initiate_prefetch_command prefetch_command_dat_w;
 always @(posedge clk)
@@ -140,6 +162,8 @@ wire uart_rx_valid;
 wire [7:0] uart_rx_data;
 wire L3_cache_we;
 wire [18*16-1:0] L3_cache_dat_w;
+wire enqueue_program_stb;
+wire [8*5-1:0] enqueue_program_dat;
 PacketReceiver PacketReceiver (
 .clk(clk),
 .reset(sw_0),
@@ -147,7 +171,10 @@ PacketReceiver PacketReceiver (
 .rx_data(uart_rx_data),
 
 .mem_read_result_stb(L3_cache_we),
-.mem_read_result_matrix_tile(L3_cache_dat_w)
+.mem_read_result_matrix_tile(L3_cache_dat_w),
+
+.enqueue_program_stb(enqueue_program_stb),
+.enqueue_program_dat(enqueue_program_dat)
 );
 uart_rx #(
 .BIT_RATE(19200),

@@ -51,12 +51,21 @@ class PinnedDeviceMemorySpace():
         shouldbe = torch.tensor(self.pinned_mem).relu().numpy()
         original = self.pinned_mem.copy()
         # sock.close()
+    def start_prog(self, ro_data_addr, instr_start_addr, instr_end_addr):
+        packet_type = 2
+        header = packet_type.to_bytes(1,'big')
+        packet = header + ro_data_addr.to_bytes(1,'big') + instr_start_addr.to_bytes(2,'big') + instr_end_addr.to_bytes(2,'big')
+        self.sock.sendall(packet)
+
     def start(self):
         """
         This causes host computer to listen and
         respond to cisa_mem_* instructions from the cherry device.
         It infinite loops.
         """
+        # but first, tell cherry device to start a program
+        self.start_prog(0, 6, 13)
+
         while True:
             header_bytes = self.sock.recv(BYTES_PER_HEADER)
             if len(header_bytes) == 0:

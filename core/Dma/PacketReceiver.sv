@@ -20,8 +20,8 @@ module PacketReceiver(
     output logic [15:0]      upload_program_instr_addr,
     output logic [15:0]      upload_program_instr_dat,
     // if start program request forward payload to execution queue.
-    output logic       enqueue_program_stb,
-    output logic [7:0] enqueue_program_addr
+    output logic           enqueue_program_stb,
+    output logic [8*5-1:0] enqueue_program_dat
 );
 enum {IDLE, UPLOAD_PROG_PACKET, ENQUEUE_PROG_PACKET, DATA_READ_RESULT_PACKET} S;
 reg instr_MSB;
@@ -69,12 +69,15 @@ always @(posedge clk) begin
         //     endcase
         // end
 
-        // // ENQUEUE PROGRAM PACKET HANDLE
-        // ENQUEUE_PROG_PACKET: if (rx_interrupt) begin
-        //     S <= IDLE;
-        //     enqueue_program_stb <= 1;
-        //     enqueue_program_addr <= rx_data;
-        // end
+        // ENQUEUE PROGRAM PACKET HANDLE
+        ENQUEUE_PROG_PACKET: if (rx_interrupt) begin
+            counter <= counter + 1;
+            if (counter == 4) begin
+                S <= IDLE;
+                enqueue_program_stb <= 1;
+            end
+            enqueue_program_dat <= {enqueue_program_dat[8*4-1:0], rx_data};
+        end
 
         // MEM READ COMPLETION PACKET HANDLE
         DATA_READ_RESULT_PACKET: if (rx_interrupt) begin

@@ -2,14 +2,14 @@
 
 ![Indicator of if Unit Tests workflow are passing](https://github.com/evanmays/cherrycore/actions/workflows/SVUT.yml/badge.svg)
 
-A deep learning training core. First ~~on paper~~, then in verilator, then on FPGA. The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
+A deep learning training core. First ~~on paper~~, then in verilator, then on FPGA, then on ASIC? The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
 
 I've got some weak stuff running on actual hardware. Train MNIST this year?
 
 # Intruction Set Architecture
 Notes in `ISA in Cherry ISA.pdf` and `experiments/compiler/assembler.py`
 
-Same cache bandwidth as a 3090 but due to the larger tile size we have 4x the arithmetic intensity on cache transfers. So, once data is on chip, the programs complete in a quarter the time.
+Same cache bandwidth as a 3090 but due to the larger tile size we have 4x the arithmetic intensity (large matmul) on cache transfers. So, once data is on chip, the programs complete in a quarter the time.
 
 Users can specify certain loops to have the loop bodies run in parallel. These parallel runs of the loops each have their own regfiles.
 
@@ -37,6 +37,8 @@ There is no L2 cache
 
 Can store 16 threads worth of data. Each thread gets 4 registers. We name these: INPUT, WEIGHTS, OUTPUT, ACCUMULATOR. Each register holds a single SZxSZ tile. On a7100t SZ=4. So the entire regfile is 4x4x4x16x18/8 = 2304 bytes. On the asic, sz=32 so this is 32x32x4x16x18/8 = 147,456 bytes.
 
+### Native arithmetic
+For now, train a cherry float (18 bit floating point with 8 bit exponent.). Maybe do TF32 (19 bits) in future. Can we train AI in this precision? Everyone else is using mixed precision.
 
 # Cherry 1 Stages
 

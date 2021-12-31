@@ -22,8 +22,11 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   input               reset,
 
   // Program execution queue ports
-  input               start_prog, // todo: support
-  output reg [6:0]    program_header_cache_addr,
+  input               execution_queue_not_empty,
+  output   reg           execution_queue_read_enable,
+  input  [15:0]       execution_queue_start_pc,
+  input  [15:0]       execution_queue_end_pc,
+  input  [3:0]        execution_queue_start_ro_data_addr,
 
   // Instruction Fetch ports (fetch and decode happen in same cycle. so can't register the icache output)
   input       [0:15]  raw_instruction, // using bit so we can cast raw_instruction[0:1] to instruction_type
@@ -32,7 +35,7 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
   // Program (header) ro_data Ports
   input  wire [0:4*9*18-1] prog_apu_formula, // each formula has 8 coefficients and 1 constant. all 18 bit values. We can load 4 formulas at a time.
   input  wire [24*8-1:0]   prog_loop_ro_data, // 8 iteration counts and jump amounts. Can load in 1 cycle.
-  output reg               ro_data_addr,
+  output reg   [3:0]            ro_data_addr,
 
   // Push to instruction queue ports
   input  wire        instr_queue_stall_push,
@@ -46,7 +49,7 @@ module control_unit #(parameter LOG_SUPERSCALAR_WIDTH=3)(
 
   output logic program_error
 );
-enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM_1, FINISH_PROGRAM_2} S;
+enum {IDLE, PREPARE_PROGRAM_0, PREPARE_PROGRAM_1,PREPARE_PROGRAM_2, DECODE, START_NEW_LOOP, INCREMENT_LOOP, UPDATE_APU, INSERT_TO_QUEUE, UPDATE_PC, FINISH_PROGRAM_1, FINISH_PROGRAM_2} S;
 
 // Info about current program
 reg [15:0]  program_end_pc;
@@ -80,23 +83,28 @@ reg [18*8-1:0] apu_linear_formulas [0:APU_CNT-1]; // 8 coefficients
 reg [17:0] apu_address_registers [0:APU_CNT-1]; // current data. starts at the constant vals
 
 always @(posedge clk) begin
+  execution_queue_read_enable <= 0;
   case (S)
-    IDLE: begin
+    IDLE: if (execution_queue_not_empty) begin
       S <= PREPARE_PROGRAM_0;
-      ro_data_addr <= 0;
+      execution_queue_read_enable <= 1;
     end
     PREPARE_PROGRAM_0: begin
-      pc <= 6;
-      program_end_pc <= 13; // should be one spot after the last spot in the program. End of program (non inclusive)
-      ro_data_addr <= 1;
       S <= PREPARE_PROGRAM_1;
+      ro_data_addr <= execution_queue_start_ro_data_addr;
+      pc <= execution_queue_start_pc;
+      program_end_pc <= execution_queue_end_pc; // should be one spot after the last spot in the program. End of program (non inclusive)
+    end
+    PREPARE_PROGRAM_1: begin
+      ro_data_addr <= ro_data_addr + 1;
+      S <= PREPARE_PROGRAM_2;
       for (integer i = 0; i < 4; i = i + 1) begin
         apu_address_registers[i]  <= prog_apu_formula[i*9*18+8*18 +: 18];
         apu_linear_formulas[i]    <= prog_apu_formula[i*9*18 +: 8*18];
       end
       loop_ro_data <= prog_loop_ro_data;
     end
-    PREPARE_PROGRAM_1: begin
+    PREPARE_PROGRAM_2: begin
       S <= DECODE;
       for (integer i = 0; i < 4; i = i + 1) begin
         apu_address_registers[i + 4]  <= prog_apu_formula[i*9*18+8*18 +: 18];
@@ -194,7 +202,7 @@ always @(posedge clk) begin
     program_end_pc <= 0;
     ro_data_addr <= 0;
     loop_ro_data <= 0;
-    program_header_cache_addr <= 0;
+    execution_queue_read_enable <= 0;
     loop_cur_depth <= -1;
     for (integer i=0; i<LOOP_CNT; i=i+1) begin
       loop_stack_value[i] <= 18'd0;
