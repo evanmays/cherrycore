@@ -92,9 +92,8 @@ int main(int argc, char** argv, char** env) {
     uart->setup(cyclesPerBit);
     // printf("%d", uart->m_setup);
     reset(dut);
-    auto start = std::chrono::system_clock::now();
     int count = 0;
-    while(!dut->program_complete) {
+    while(true) {
         if (count == 0 && dut->top__DOT____Vcellout__instruction_queue__out_dma_instr >> 22 > 0) {
             count++;
         } else if (count > 0 && count < 16) {
@@ -117,22 +116,4 @@ int main(int argc, char** argv, char** env) {
         //log_instruction_queue_if_needed(dut, wf, rf);
         assert(!dut->error);
     }
-    for(int i = 0; i < 10000*cyclesPerBit; i++) {
-        // need to keep tcp link running so it can finish its job.
-        // not actually sure if we need this but easier to be safe than read the uartsim.cpp code
-        // and transfer 1000 more bits (100 bytes of data) since those cisa_mem_write keep going even after a program is complete
-        // I guess, program complete doesn't mean we have finished all the asynchronous calls to cisa_mem_write.
-        // I guess, when python "hears" a program is done, it will need to do some kind of cross reference with the prgoram's code and the recent memory writes to know if the data is stored in vram file properly. Likely, les of an issue when VRAM is on GPU? depends on microarch
-        dut->uart_rxd = (*uart)(dut->uart_txd);
-        tick(dut);
-    }
-
-    auto end = std::chrono::system_clock::now();
-
-    std::chrono::duration<double> elapsed_seconds = end-start;
-    printf("Elapsed %lf s\n", elapsed_seconds);
-    wf.close();
-    rf.close();
-    delete dut;
-    exit(EXIT_SUCCESS);
 }

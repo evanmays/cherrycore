@@ -69,11 +69,13 @@ class PinnedDeviceMemorySpace():
             host_addr = int.from_bytes(header_bytes[1:], byteorder='big')
             packet_type = int(header_bytes[0])
             if packet_type == 0:
-                continue
+                assert False # continue
             write_flag = packet_type == 3
+            read_flag = packet_type == 2
+            prog_end_flag = packet_type == 4
             
-
-            print("Received", "write request" if write_flag else "read request", "for address", host_addr)
+            if write_flag or read_flag:
+                print("Received", "write request" if write_flag else "read request", "for address", host_addr)
 
             if write_flag:
                 body_bytes = self.sock.recv(BYTES_PER_BODY)
@@ -86,12 +88,15 @@ class PinnedDeviceMemorySpace():
                 # if host_addr == 20:
                 #     return
                 print(self.pinned_mem)
-            else:
+            elif read_flag:
                 np_dat = self.pinned_mem[host_addr]
                 bytes_dat = numpy_to_cherry_float_tile(np_dat)
                 print("Read request data:", bytes_dat)
                 read_request_response_type = 3
                 self.sock.sendall(read_request_response_type.to_bytes(1,'big') + bytes_dat)
+            elif prog_end_flag:
+                print("PROGRAM COMPLETE")
+                exit(0)
     # TODO: support tinygrad creating a new device buffer and moving data to pinned_mem (t.to_gpu()). need to lock memory locations to prevent tinygrad and cherry device from reading while someone else is writing?
     # TODO: support tiny grad moving data from pinned_mem to "cpu" land (t.to_cpu())
 

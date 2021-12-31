@@ -21,7 +21,6 @@ module PacketSender(
     input           dma_send_write_queue_available,
     output          dma_send_write_queue_re,
     // Send end program command
-    input [7:0]     dma_send_end_program_data,
     input           dma_send_end_program_queue_available,
     output          dma_send_end_program_queue_re
 );
@@ -38,11 +37,7 @@ always @(posedge clk) begin
     dma_send_end_program_queue_re <= 0;
     case (S)
         IDLE: if (tx_busyn) begin
-            if (dma_send_end_program_queue_available) begin
-                dma_send_end_program_queue_re <= 1;
-                counter <= 0;
-                S <= SENDING_END_PROG_NOTIF;
-            end else if (dma_send_read_queue_available) begin
+            if (dma_send_read_queue_available) begin
                 dma_send_read_queue_re <= 1;
                 counter <= 0;
                 S <= SENDING_READ_REQUEST;
@@ -50,21 +45,29 @@ always @(posedge clk) begin
                 dma_send_write_queue_re <= 1;
                 counter <= 0;
                 S <= SENDING_WRITE;
+        end else if (dma_send_end_program_queue_available) begin // basically will never send if you have back to back programs filling up the dma_write queue. Fine for now, just means we need a low performance delay in between when we enqueue programs. Something like... don't enquue another program until you know the first one is done. Can come back and fix the performance later. Prog end should send after the last dma_write of a program executes.
+                dma_send_end_program_queue_re <= 1;
+                counter <= 0;
+                S <= SENDING_END_PROG_NOTIF;
             end
         end
 
         // MAKE&SEND PROG END NOTIFICATION PACKET
         SENDING_END_PROG_NOTIF: if (tx_busyn) begin
             counter <= counter + 1;
-            if (counter == 1) // Read request packet is 1 header byte, 2 payload bytes. 3 bytes total.
+            if (counter == 2) // Eventually we'll want to include the execution id tag
                 S <= IDLE;
             case (counter)
                 0: begin
-                    tx_data <= {2'd2, 6'd0}; // packet type bits kinds are different depeending on direction of packet
+                    tx_data <= 8'd4; // packet type bits kinds are different depeending on direction of packet
                     tx_en <= 1;
                 end
                 1: begin
-                    tx_data <= dma_send_end_program_data;
+                    tx_data <= 0;
+                    tx_en <= 1;
+                end
+                2: begin
+                    tx_data <= 0;
                     tx_en <= 1;
                 end
             endcase

@@ -5,18 +5,16 @@ input               sw_0 , // reset switch
 input   wire        uart_rxd, // UART Recieve pin.
 output  wire        uart_txd,  // UART transmit pin.
 output  wire [7:0]  led,
-output wire error,
-output  wire        program_complete
+output wire error
 );
 parameter SZ = 4;
 wire                freeze;
 assign freeze = dma_busy;
 assign led[1] = freeze;
 //assign led[5] = queue_empty;
-assign program_complete = prog_end_instr_valid & !freeze;
 assign led[2] = dma_stage_3_main_mem_write.raw_instr_data.valid;
-assign led[4] = mem_read_completion_fifo_err | packet_send_mem_write_err;
-assign error = mem_read_completion_fifo_err | packet_send_mem_write_err;
+assign led[4] = error;
+assign error = mem_read_completion_fifo_err | packet_send_mem_write_err | packet_send_prog_complete_err;
 wire                  queue_empty;
 
 dma_stage_1_instr   dma_stage_1_L3_read;
@@ -169,7 +167,8 @@ wire L3_cache_read_enable = dma_stage_1_L3_read.raw_instr_data.valid && !dma_sta
 wire packet_send_fifo_mem_write_command_we = dma_stage_3_main_mem_write.raw_instr_data.valid && dma_stage_3_main_mem_write.raw_instr_data.mem_we;
 always @(*) begin
   dma_busy =    (!L3_not_empty && L3_cache_read_enable)
-              || (send_write_packet_queue_full && packet_send_fifo_mem_write_command_we);
+              || (send_write_packet_queue_full && packet_send_fifo_mem_write_command_we)
+              || (send_prog_complete_packet_queue_full && prog_end_instr_valid);
 end
 wire mem_read_completion_fifo_err;
 
@@ -206,6 +205,9 @@ wire dma_send_write_queue_re;
 wire [15:0]    dma_send_write_queue_data;
 wire [18*16-1:0] dma_send_write_queue_data2;
 wire dma_send_write_queue_available;
+
+wire dma_send_prog_complete_queue_re;
+wire dma_send_prog_complete_queue_available;
 PacketSender PacketSender(
 .clk(clk),
 .reset(sw_0),
@@ -220,7 +222,10 @@ PacketSender PacketSender(
 .dma_send_write_queue_data(dma_send_write_queue_data),
 .dma_send_write_queue_data2(dma_send_write_queue_data2),
 .dma_send_write_queue_available(dma_send_write_queue_available),
-.dma_send_write_queue_re(dma_send_write_queue_re)
+.dma_send_write_queue_re(dma_send_write_queue_re),
+
+.dma_send_end_program_queue_available(dma_send_prog_complete_queue_available),
+.dma_send_end_program_queue_re(dma_send_prog_complete_queue_re)
 );
 
 uart_tx #(
@@ -248,6 +253,19 @@ smplfifo #(.BW(304)) packet_send_fifo_mem_write_command(
 .o_data({dma_send_write_queue_data, dma_send_write_queue_data2}),
 .o_err(packet_send_mem_write_err),
 .will_overflow(send_write_packet_queue_full)
+);
+wire packet_send_prog_complete_err;
+wire send_prog_complete_packet_queue_full;
+smplfifo #(.BW(1)) packet_send_prog_complete_message(
+.i_clk(clk),
+.i_reset(sw_0),
+.i_wr(!freeze && !send_write_packet_queue_full && prog_end_instr_valid),
+.i_data(1'b1),
+.o_empty_n(dma_send_prog_complete_queue_available),
+.i_rd(dma_send_prog_complete_queue_re),
+//.o_data(),
+.o_err(packet_send_prog_complete_err),
+.will_overflow(send_prog_complete_packet_queue_full)
 );
 
 //
