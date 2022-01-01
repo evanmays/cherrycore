@@ -48,7 +48,7 @@ Can store 16 threads worth of data. Each thread gets 4 registers. We name these:
 ### Native arithmetic
 For now, train a cherry float (18 bit floating point with 8 bit exponent.). Maybe do TF32 (19 bits) in future. Can we train AI in this precision? Everyone else is using mixed precision.
 
-First class support for matrix multiply (tensor core style). Maybe first class support for 3x3 and 5x5 convolutions over a 35x35 tile although 5x5 will have a third of the throughput.
+First class support for matrix multiply (tensor core style). Maybe first class support for 3x3 and 5x5 convolutions over a 35x35 tile. We can just reuse the dot product FMAs from matmul. 3x3 is like 16 TFLOPs versus the matmul 64 TFLOPs. First class support for pooling?
 
 # Cherry 1 Stages
 
@@ -153,11 +153,11 @@ for i in cherry_range(2):
      matmul
      store
 ```
-Instead of executing load, load, matmul, store, load, load, matmul, store. We will do some time multiplexing on each loop iteration. We execute, load, load, load, load, matmul, matmul, store, store. This hides the latency. NVIDIA does a similar thing but the CUDA programmer must think about threads and warps. Our "threads" are implicit.
+Instead of executing load, load, matmul, store, load, load, matmul, store. We will do some time multiplexing (round robin threads) on each loop iteration. We execute, load, load, load, load, matmul, matmul, store, store. This hides the latency. NVIDIA does a similar thing but they have threads and warps and too many abstractions. Our "threads" are implicit. It takes a day to learn CUDA, it takes an hour to learn cherrylang.
 
-This is super cheap to implement in hardware. Hopefully, under 1,500 of our 64,000 luts.
+This is dirt cheap to implement in hardware. Cherry 2 will have under a single percent dedicated to this control logic.
 
-Superscalar implementation in `experiments/superscalar.py`. Can play around with different latencies for matmul or memory accesses. Can also play around with different superscalr widths. In hardware, increasing superscalar with is almost free for us on FPGA.
+Superscalar implementation in `experiments/superscalar.py`. Can play around with different latencies for matmul or memory accesses. Can also play around with different superscalr widths. In hardware, increasing superscalar width costs us extra regfile size. Super scalar width 16 causes regfile to be about 1% of the total SRAM area.
 
 More info (and example code for `cherry_range()` in the compiler section.
 
@@ -183,19 +183,18 @@ A @ B @ C # matrix multiply twice
 ```
 This requires two matmul programs uploaded to Cherry device. One is for input tensors of shape `(10,100)` and `(100,200)` the other is for input tensors of shape `(100,200)` and `(200,10)`. Of course, both programs that were uploaded had the same high level source code written in python.
 
-If the community sees a lot of people multipliying groups of 3 matrices, maybe someone will write a high level python program to multiply 3 matrices instead of 2. Then this code would only need to compile and be uploaded to the cherry once. This should be easy since writing code for Cherry is easy if you have a good algorithm. The new kernel saves cache bandwidth and may save memory bandwidth.
-
-These programs can be open sourced and shared in a community kernel repo.
+A reference compiler and standard library of cherry programs will be open source. It should have respectable performance. If the community wants more performance, someone can write new programs and new compiler since the assembly language and device drivers are all open source.
 
 There's todo's sprawled around the `experiments/compiler` folder. Some larger projects
 
 Migrating to c/c++ compiler/assembler.
 * Rewrite the sympy library in c or c++. Just need the parts that we use.
 * Rewrite the bit packing library in c or c++. Just need the parts that we use.
-* Need to think about how we can have an interface as nice as `cherry_range` in c/c++. Maybe need custom intepreter so programs can still be written in a pseudo-python
+* Need to think about how we can have an interface as nice as `cherry_range` in c/c++. Maybe need custom intepreter so programs can still be written in a pseudo-python. Maybe just don't move the cherry program frontend to c++, leave it as python.
 
 Usability improvements
 * Notify user when they try to access a register outside of a `cherry_range` loop
+* Notify user that appears to not be respecting cherry_range loop iteration independence property.
 * Write a script that auto finds the best spot for a `cherry_range` to go. This can assist noobs
 * Write good error messages for all the `cisa_*` functions
 * Document all the things
