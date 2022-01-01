@@ -41,18 +41,18 @@ else
 fi
 
 # Dcache Test Suite
-cd core/Memory
-"svutRun" -test "dcache_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
-rm icarus.out log
-cd ../../
-ret=$?
+# cd core/Memory
+# "svutRun" -test "dcache_unit_test.sv" -define "MYDEF1=5;MYDEF2" | tee log
+# rm icarus.out log
+# cd ../../
+# ret=$?
 
-if [[ $ret != 0 ]]; then
-    echo "Execution failed but should not..."
-    exit 1
-else
-    echo "OK testsuite execution completed successfully ^^"
-fi
+# if [[ $ret != 0 ]]; then
+#     echo "Execution failed but should not..."
+#     exit 1
+# else
+#     echo "OK testsuite execution completed successfully ^^"
+# fi
 
 # Low performance DMA UART Test Suite
 cd core/Dma
