@@ -81,14 +81,15 @@ endmodule
 module icache_mem (
   input clk,
   input [10:0] read_instr_addr,
+  input        we,
   input [10:0] write_instr_addr, // just write to 0 if you don't want to write
   output [ISA_WIDTH-1:0] raw_instr_read,
   input [ISA_WIDTH-1:0] raw_instr_write
 );
-  parameter ISA_WIDTH=18;
+  parameter ISA_WIDTH=16;
   reg [ISA_WIDTH-1:0] mem_instrs [0:2047]; // 2BRAM18
   assign raw_instr_read = mem_instrs[read_instr_addr];
-  always @(posedge clk) begin
+  always @(posedge clk) if (we) begin
     mem_instrs[write_instr_addr] <= raw_instr_write;
   end
 endmodule

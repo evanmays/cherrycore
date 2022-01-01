@@ -1,7 +1,7 @@
 `default_nettype	none
 module top #(parameter CLK_HZ=50000000) (
-input               clk     , // Top level system clock input.
-input               sw_0 , // reset switch
+input   wire        clk     , // Top level system clock input.
+input   wire        sw_0 , // reset switch
 input   wire        uart_rxd, // UART Recieve pin.
 output  wire        uart_txd,  // UART transmit pin.
 output  wire [7:0]  led,
@@ -144,9 +144,16 @@ prefetch_initiate_superscalar_fifo packet_send_fifo_mem_read_request(
 .full(prefetch_initiate_queue_full),
 .emptyn(dma_send_read_queue_available)
 );
-fake_icache icache (
-  .raw_instruction(raw_instruction),
-  .pc(pc)
+
+icache_mem icache (
+  .clk(clk),
+
+  .read_instr_addr(pc),
+  .raw_instr_read(raw_instruction),
+
+  .we(upload_program_instr_stb),
+  .write_instr_addr(upload_program_instr_addr),
+  .raw_instr_write(upload_program_instr_dat)
 );
 
 fake_ro_data ro_data (
@@ -164,6 +171,9 @@ wire L3_cache_we;
 wire [18*16-1:0] L3_cache_dat_w;
 wire enqueue_program_stb;
 wire [8*5-1:0] enqueue_program_dat;
+wire upload_program_instr_stb;
+wire [15:0] upload_program_instr_addr;
+wire [15:0] upload_program_instr_dat;
 PacketReceiver PacketReceiver (
 .clk(clk),
 .reset(sw_0),
@@ -172,6 +182,10 @@ PacketReceiver PacketReceiver (
 
 .mem_read_result_stb(L3_cache_we),
 .mem_read_result_matrix_tile(L3_cache_dat_w),
+
+.upload_program_instr_stb(upload_program_instr_stb),
+.upload_program_instr_addr(upload_program_instr_addr),
+.upload_program_instr_dat(upload_program_instr_dat),
 
 .enqueue_program_stb(enqueue_program_stb),
 .enqueue_program_dat(enqueue_program_dat)

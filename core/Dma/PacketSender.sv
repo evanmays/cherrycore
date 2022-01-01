@@ -14,15 +14,15 @@ module PacketSender(
     // Start read requests
     input [15:0]    dma_send_read_queue_data,
     input           dma_send_read_queue_available,
-    output          dma_send_read_queue_re,
+    output    logic dma_send_read_queue_re,
     // Start write request
     input [15:0]    dma_send_write_queue_data,
     input [18*16-1:0] dma_send_write_queue_data2,
     input           dma_send_write_queue_available,
-    output          dma_send_write_queue_re,
+    output    logic dma_send_write_queue_re,
     // Send end program command
     input           dma_send_end_program_queue_available,
-    output          dma_send_end_program_queue_re
+    output    logic dma_send_end_program_queue_re
 );
 enum {IDLE, SENDING_READ_REQUEST, SENDING_WRITE, SENDING_END_PROG_NOTIF} S;
 

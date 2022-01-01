@@ -51,6 +51,14 @@ class PinnedDeviceMemorySpace():
         shouldbe = torch.tensor(self.pinned_mem).relu().numpy()
         original = self.pinned_mem.copy()
         # sock.close()
+    def upload_prog(self, ro_data_addr, instr_start_addr):
+        packet_type = 1
+        relu_fast_prog_instructions = b'\xf0\x00\x40\x80\x20\x00\x80\x00\x01\x80\x61\x20\xc0\x00'
+        packet_length = len(relu_fast_prog_instructions) // 2
+        header = (packet_type + (packet_length << 2)).to_bytes(1,'big')
+        packet = header + instr_start_addr.to_bytes(2, 'big') + relu_fast_prog_instructions
+        self.sock.sendall(packet)
+
     def start_prog(self, ro_data_addr, instr_start_addr, instr_end_addr):
         packet_type = 2
         header = packet_type.to_bytes(1,'big')
@@ -64,6 +72,7 @@ class PinnedDeviceMemorySpace():
         It infinite loops.
         """
         # but first, tell cherry device to start a program
+        self.upload_prog(0, 6)
         self.start_prog(0, 6, 13)
 
         while True:
