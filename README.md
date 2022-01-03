@@ -4,7 +4,9 @@
 
 A deep learning training core. First ~~on paper~~, then in verilator, then on FPGA, then on ASIC? The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
 
-I've got some weak stuff running on actual hardware. Train MNIST this year?
+Peformance should be on par with TPUs at same process node sizes.
+
+I've got the microarchitecture implemented. `./build_sim.sh` will build the verilog and start simulating the chip (accessible over tcp) and `python3 cherrysim.py` will run an example program as well as host the virtual device memory. In order to train MNIST need to add support for remaining instructions in the ISA. Some modules already done just need to integrate. Also need to convert `cherrysim.py` to a tinygrad extension.
 
 # Intruction Set Architecture
 Notes in `ISA in Cherry ISA.pdf` and `experiments/compiler/assembler.py`
@@ -20,10 +22,18 @@ We feed the pipelines from an instruction queue. The instruction queueu is fed b
 
 There's also a program cache that can hold all the programs a forward and back pass would need (a few KB). And a program exection queue which allows the host device to schedule programs.
 
+### Device Memory Access
+For FPGA versions, use a reserved memory area in the host pc. Each memory access loads a tile, so I estimate over 100 megabit ethernet we can get 50% utilization. Larger FPGA will use pcie.
+
+DMA (direct memory access) diagram here for Cherry on FPGA. [https://hackmd.io/@evanmays/r1G62pQsK](https://hackmd.io/@evanmays/r1G62pQsK)
+
+For ASIC, only need 256GB/s per chip core. Probably cheapest/easiest to use GDDR.
+
+
 ### Cache Hierachy
 **L3**
 
-Our L3 cache stores data that was prefetched. Once you read from the L3 the data gets destroyed. This is because our L3 is a simple queue. It's smaller than L1 cache also.
+Our L3 cache stores data that was prefetched from device memory. Once you read from the L3 the data gets destroyed. This is because our L3 is a simple queue. It's smaller than L1 cache also.
 
 **L2**
 
@@ -35,7 +45,7 @@ There is no L2 cache
 
 Each address gives you access to a single (SZxSZ) tile of the tensor. The tile stores data across the final two dimensions. So, if you have an image tensor with shape (batch_size, channel_count, width, height) then a memory access lets you access a 32x32 tile for a specific batch and channel. Perhaps on cherry 3 an address range can be shared across cores and broadcast its reads to all cores. If just reshaping to swap the last two dimensions, no need to rearrange in mememory. If trying to rearrange more than that, we'll probably need some kind of transpose engine with first class reshape support. Maybe that looks like a coprocessor with a small strided memory.
 
-Programmer manually cache. They are aided by our runtime telling them when a tensor is in cache already or not. They write two programs. One for if a tensor is in cache, another for if the tensor is not in cache.
+Programmer manually cache. They are aided by our runtime telling them when a tensor is in cache already or not. They write two programs. One for if a tensor is in cache, another for if the tensor is not in cache. Nothing is stopping anyone from writing a good compiler that optimizes the memory accesses.
 
 We want to support a load/store instruction into 32x32 matrix register (2432 bytes). The programmer can access 4 of these registers (input, weights, accumulate, output).
 
@@ -52,14 +62,13 @@ First class support for matrix multiply (tensor core style). Maybe first class s
 
 # Cherry 1 Stages
 
-1. Tiny Cherry 1, does 1 relu per cycle (50 MFLOPs) in simulator and on physical a7-100t. It's just scaffolding so rest of work can be done in parallel.
-2. Small Cherry 1, does 6.4 GFLOPs with support for entire ISA in simulator and on physical a7-100t
+1. ~~Tiny Cherry 1, does 1 relu per cycle (50 MFLOPs) in simulator and on physical a7-100t. It's just scaffolding so rest of work can be done in parallel.~~
+2. Small Cherry 1, does 6.4 GFLOPs with support for entire ISA in simulator and on physical a7-100t (finish remaining arithmetic isa support and use sv2v so we can yosys with all system verilog features)
 3. Big Cherry 1, works on physical $7500 Alveo u250 fpga (or equivalent)
+4. Cherry 2, same as big fpga but an asic and everything operates on 32x32 tiles not 16x16 tiles and there's real memory
+5. Cherry 3, cherry 2 but with 4 cores instead of 1 and 4x the memory bandwidth.
 
-Original Cherry 2 and 3 master plan [written by geohot here](https://github.com/geohot/tinygrad/tree/master/accel/cherry). But I have some tweaks
-
-1. Cherry 2 stays the same. It's just a tapeout of the Big Cherry 1
-2. Cherry 3 is the AI Training Card for your desktop and for real production model training (no GPT-3 fine tuning sorry). It's got half a petaflop peak TF32 performance and high flop utilization. 8 cores instead of 16. 1024 GB/s VRAM instead of 512.
+Idea is similar to [this](https://github.com/geohot/tinygrad/tree/master/accel/cherry). But it's not a risc-v add-on. It's just an AI training chip. maybe i'll rename to root beer computer in honor of the rootbeer float.
 
 # Contributors Getting Started
 
@@ -134,7 +143,7 @@ git submodule update --init --recursive
 
 # Superscalar Notes
 
-We can cheat on the superscalar. All deep learning kernels have lots of loops (to tile the tensors they are computing on), and each iteration of the loop can be run independently. Kernel programmer will add an annotation to their loop when it's OK to execute the iterations out of order.
+We can cheat on the superscalar. All deep learning programs have lots of loops (to tile the tensors they are computing on), and each iteration of the loop can be run independently. Kernel programmer will add an annotation to their loop when it's OK to execute the iterations out of order.
 
 Example
 
@@ -209,20 +218,3 @@ def matmul(A):
           relu
           store
 ```
-
-# DMA Notes
-
-On small cherry 1 (mini edition), memory has 5 ports of width 18*4. 4 ports are for running kernels, 5th port is for DMA. 4 ports have priority. 5th port stalls a bunch. The 5th port can use reorder buffer to prevent stalls. Reorder buffer length 2 with guaranteed reorder by no more than 1 position. Simple algorithm: Use a single bit to take note on when a dma op has been ignored for one cycle or not. This should get us to maybe 5% stall rate. Can increase decode width to 4 for ~0% stall rate. I'm just guestimating on this percent but it feels accurate.
-
-DMA diagram here for Cherry on FPGA. [https://hackmd.io/@evanmays/r1G62pQsK](https://hackmd.io/@evanmays/r1G62pQsK)
-
-Small Cherry 1
-`100e6` bits per second @ 50MHz is 2 bits per cycle. Can't even use full 5th port.
-
-Big Cherry 1
-`8*12e9` bits per second @ 500MHz is 192 bits per cycle. But now port is `16*18=288` bits wide.
-
-Cherry 2
-`8*256e9` bits per second @ 1GHz is 2048 bits per cycle. But now port is `32*18=576` bits wide. This device won't use DMA. I estimate it needs 256GB/s to keep compute to memory bandwidth ratio the same as big cherry 1.
-
-Maybe make 5th port just a full sized port. Or, combine it with another port and do some arbitration.
