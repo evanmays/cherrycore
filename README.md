@@ -56,9 +56,9 @@ Convolution is the only program that really needs strided memory. We can have al
 Can store 16 threads worth of data. Each thread gets 4 registers. We name these: INPUT, WEIGHTS, OUTPUT, ACCUMULATOR. Each register holds a single SZxSZ tile. On a7100t SZ=4. So the entire regfile is 4x4x4x16x18/8 = 2304 bytes. On U250 SZ=16. On the asic, sz=32 so this is 32x32x4x16x18/8 = 147,456 bytes.
 
 ### Native arithmetic
-For now, train a cherry float (18 bit floating point with 8 bit exponent.). Maybe do TF32 (19 bits) in future. Can we train AI in this precision? Everyone else is using mixed precision.
+For now, train a cherry float (18 bit floating point with 8 bit exponent.). Maybe do TF32 (19 bits) in future. Can we train AI in this precision? Everyone else is using mixed precision. If we have issues training here, allow user to turn on/off stocastic rounding. With stochastic rounding off, always round down, with stochastic rounding on, 20% (psuedo random) of the time you round up. This should be super cheap in hardware. True rounding is expensive, psudo-random bit flips are cheap.
 
-First class support for matrix multiply (tensor core style). Maybe first class support for 3x3 and 5x5 convolutions over a 35x35 tile. We can just reuse the dot product FMAs from matmul. 3x3 is like 16 TFLOPs versus the matmul 64 TFLOPs. First class support for pooling?
+First class support for matrix multiply (tensor core style). Maybe first class support for 3x3 and 5x5 convolutions over a 35x35 tile. We can just reuse the dot product FMAs from matmul. 3x3 is like 16 TFLOPs versus the matmul 64 TFLOPs. First class support for pooling? How does Trainium's pooling core work?
 
 # Cherry 1 Stages
 
