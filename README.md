@@ -4,7 +4,7 @@
 
 A deep learning training core. First ~~on paper~~, then in verilator, then on FPGA, then on ASIC? The goal is to put the AS in ASIC... it's not even turing complete, but it trains neural nets faster and gets more done on a single chip.
 
-Peformance should be on par with TPUs at same process node sizes.
+Peformance should be on par with Google TPUs and AWS Trainiums at same process node sizes.
 
 I've got the microarchitecture implemented. `./build_sim.sh` will build the verilog and start simulating the chip (accessible over tcp) and `python3 cherrysim.py` will run an example program as well as host the virtual device memory. In order to train MNIST need to add support for remaining instructions in the ISA. Some modules already done just need to integrate. Also need to convert `cherrysim.py` to a tinygrad extension.
 
